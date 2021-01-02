@@ -16,17 +16,19 @@ type (
 )
 
 func (t traceInfo) String() string {
-	sb := strings.Builder{}
-	t.writeTo(&sb) // faster than fmt.Sprintf("%s %s:%d", t.FuncName, t.FileName, t.Line) : benchmark 88ms vs 213ms
-	return sb.String()
+	return t.writeTo(&strings.Builder{}).String()
 }
 
-func (t traceInfo) writeTo(sb *strings.Builder) {
+// writeTo a string builder
+// faster than fmt.Sprintf("%s %s:%d", t.FuncName, t.FileName, t.Line)
+// benchmark 88ms vs 213ms
+func (t traceInfo) writeTo(sb *strings.Builder) *strings.Builder {
 	sb.WriteString(t.FuncName)
 	sb.WriteRune('@')
 	sb.WriteString(t.FileName)
 	sb.WriteRune(':')
 	sb.WriteString(strconv.Itoa(t.Line))
+	return sb
 }
 
 func generateStackTrace(skipMore int) *traceInfo {

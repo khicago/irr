@@ -17,18 +17,14 @@ func (ir *irr) Root() error {
 	}
 }
 
-func (ir *irr) Source() error {
-	for cur := ir; cur != nil; {
-		if cur.inner == nil {
-			return cur
+func (ir *irr) Source() (err error) {
+	_ = ir.TraverseToSource(func(e error, isSource bool) error {
+		if isSource {
+			err = e
 		}
-		if next, ok := cur.inner.(*irr); ok {
-			cur = next
-		} else {
-			return cur
-		}
-	}
-	return ir
+		return nil
+	})
+	return
 }
 
 func (ir *irr) Unwrap() error {
@@ -39,17 +35,18 @@ func (ir *irr) GetTraceInfo() *traceInfo {
 	return ir.Trace
 }
 
-func (ir *irr) TraverseToSource(fn func(err error) error) (err error) {
+func (ir *irr) TraverseToSource(fn func(err error, isSource bool) error) (err error) {
 	defer CatchFailure(func(e error) { err = e })
 	for cur := ir; cur != nil; {
-		err = fn(cur)
-		if cur.inner == nil {
+		isCurSource := cur.inner == nil
+		err = fn(cur, isCurSource)
+		if isCurSource {
 			break
 		}
 		if next, ok := cur.inner.(*irr); ok {
 			cur = next
 		} else {
-			err = fn(cur)
+			err = fn(cur.inner, true)
 			break
 		}
 	}
@@ -76,13 +73,15 @@ func (ir *irr) writeSelfTo(sb *strings.Builder, printTrace bool) {
 
 func (ir *irr) ToString(printTrace bool, split string) string {
 	sb := strings.Builder{}
-	_ = ir.TraverseToSource(func(err error) error {
+	_ = ir.TraverseToSource(func(err error, isSource bool) error {
 		if irr, ok := err.(*irr); ok {
 			irr.writeSelfTo(&sb, printTrace)
 		} else {
 			sb.WriteString(err.Error())
 		}
-		sb.WriteString(split)
+		if !isSource {
+			sb.WriteString(split)
+		}
 		return nil
 	})
 	return sb.String()
@@ -105,6 +104,7 @@ func (ir *irr) LogError(logger interface{ Error(args ...interface{}) }) IRR {
 func (ir *irr) LogFatal(logger interface{ Fatal(args ...interface{}) }) IRR {
 	str := ir.ToString(true, "\n")
 	logger.Fatal(str)
+	// to make sure it has been printed to std output stream
 	fmt.Println(str)
 	return ir
 }

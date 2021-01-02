@@ -29,22 +29,21 @@ func Wrap(innerErr error, formatOrMsg string, args ...interface{}) IRR {
 
 func TraceSkip(skip int, formatOrMsg string, args ...interface{}) IRR {
 	err := newIrr(formatOrMsg, args...)
-	err.Trace = createTraceInfo(skip + 1, nil)
+	err.Trace = createTraceInfo(skip+1, nil)
 	return err
 }
 
 func Trace(formatOrMsg string, args ...interface{}) IRR {
-	return TraceSkip(1, formatOrMsg, args ...)
+	return TraceSkip(1, formatOrMsg, args...)
 }
 
-func TrackSkip(skip int, innerErr error, formatOrMsg string, args ...interface{}) *irr {
+func TrackSkip(skip int, innerErr error, formatOrMsg string, args ...interface{}) IRR {
 	err := newIrr(formatOrMsg, args...)
 	err.inner = innerErr
-	err.Trace = createTraceInfo(skip + 1, innerErr)
+	err.Trace = createTraceInfo(skip+1, innerErr)
 	return err
 }
 
-
-func Track(innerErr error, formatOrMsg string, args ...interface{}) *irr {
+func Track(innerErr error, formatOrMsg string, args ...interface{}) IRR {
 	return TrackSkip(1, innerErr, formatOrMsg, args...)
 }
