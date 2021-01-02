@@ -1,5 +1,8 @@
 # irr
 
+[![Build Status](https://travis-ci.org/khicago/irr.svg?branch=master)](https://travis-ci.org/khicago/irr)
+[![codecov](https://codecov.io/gh/khicago/irr/branch/master/graph/badge.svg)](https://codecov.io/gh/khicago/irr)
+
 Irr is an error library based on the handling stack.
 It supports error wrapping, handling-stack tracing, and error stack traversal.
 
@@ -11,7 +14,10 @@ It supports error wrapping, handling-stack tracing, and error stack traversal.
   - [Import package](#import-package)
   - [Basic Usage](#basic-usage)
   - [Work with errors' stack trace](#work-with-errors-stack-trace)
-- [TODO: Not finished yet](#todo-not-finished-yet)
+  - [Unwrap](#unwrap)
+  - [Logging shortcuts](#logging-shortcuts)
+  - [Traverse, and it's panic handling](#traverse-and-its-panic-handling)
+- [Recommended Practices](#recommended-practices)
 
 ## Overview
 
@@ -124,5 +130,44 @@ fmt.Println(wrappedErrWithParam.ToString(true, "\n"))
 // some wrap information with integer 1 your_outer_function@/.../your_outer_code.go:line
 // this is a new error your_function@/.../your_code.go:line
 ```
+
+### Unwrap
+
+Irr provides several methods for users to query several key points in the error chain.
+
+```go
+IRR interface {
+    Root() error
+    Source() error
+    Unwrap() error
+}
+```
+
+The `Unwrap()` method, which returns the error directly wrapped by the current irr. It supports the `Unwrap` interface, so irr is fully compatible with the wrap logic of the `errors` library. For example, you can use `errors.Is` to determine if the error type is expected.
+
+The `Root()` method will return the final error, and if an error wrapped an error with irr, which is another wrapped error that supports Unwrap interface (such as an error created by `%w`), it will continue to search until it finds the first error that cannot be unwrapped.
+
+The `Source()` method returns only the first error that is generally not an irr wrap, which is usually the one we are most concerned about.
+
+In practice, we focus on Source, because it is usually the error returned by some underlying call. The root, on the other hand, can be used to generate error tags.
+
+### Logging shortcuts
+
+Irr interface supports some logging shortcuts, by injecting logger, you can easily warp errors in the final processing exit and enter error, warning, fatal level logs.
+When using these log shortcuts, trace information will be printed by default.
+
+```go
+IRR interface {
+    ...
+    LogWarn(logger interface{ Warn(args ...interface{}) }) IRR
+    LogError(logger interface{ Error(args ...interface{}) }) IRR
+    LogFatal(logger interface{ Fatal(args ...interface{}) }) IRR
+    ...
+}
+```
+
+### Traverse, and it's panic handling
+
+## Recommended Practices
 
 ## TODO: Not finished yet

@@ -2,6 +2,19 @@ language: go
 
 go:
   - 1.13.x
+  -
 env:
   - GO111MODULE=on
-script: go test -v -cover .
+
+before_install:
+  - go get -t -v ./...
+
+script:
+  - go test -v -race -coverprofile=coverage.txt -covermode=atomic
+
+# CODECOV_TOKEN are configured in travis-ci project's ENV
+# more information, check:
+# - https://codecov.io/gh/khicago/ir
+# - https://travis-ci.org/github/khicago/irr/settings
+after_success:
+  - bash <(curl -s https://codecov.io/bash)
