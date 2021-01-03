@@ -8,7 +8,7 @@ import (
 )
 
 var (
-	theIrr, innerIrr   *irr
+	theIrr, innerIrr   *BasicIrr
 	sourceErr, rootErr error
 )
 

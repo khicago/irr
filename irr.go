@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-func (ir *irr) Root() error {
+func (ir *BasicIrr) Root() error {
 	var err error = ir
 	for {
 		inner := errors.Unwrap(err)
@@ -17,7 +17,7 @@ func (ir *irr) Root() error {
 	}
 }
 
-func (ir *irr) Source() (err error) {
+func (ir *BasicIrr) Source() (err error) {
 	_ = ir.TraverseToSource(func(e error, isSource bool) error {
 		if isSource {
 			err = e
@@ -27,15 +27,15 @@ func (ir *irr) Source() (err error) {
 	return
 }
 
-func (ir *irr) Unwrap() error {
+func (ir *BasicIrr) Unwrap() error {
 	return ir.inner
 }
 
-func (ir *irr) GetTraceInfo() *traceInfo {
+func (ir *BasicIrr) GetTraceInfo() *traceInfo {
 	return ir.Trace
 }
 
-func (ir *irr) TraverseToSource(fn func(err error, isSource bool) error) (err error) {
+func (ir *BasicIrr) TraverseToSource(fn func(err error, isSource bool) error) (err error) {
 	defer CatchFailure(func(e error) { err = e })
 	for cur := ir; cur != nil; {
 		isCurSource := cur.inner == nil
@@ -43,7 +43,7 @@ func (ir *irr) TraverseToSource(fn func(err error, isSource bool) error) (err er
 		if isCurSource {
 			break
 		}
-		if next, ok := cur.inner.(*irr); ok {
+		if next, ok := cur.inner.(*BasicIrr); ok {
 			cur = next
 		} else {
 			err = fn(cur.inner, true)
@@ -53,7 +53,7 @@ func (ir *irr) TraverseToSource(fn func(err error, isSource bool) error) (err er
 	return
 }
 
-func (ir *irr) TraverseToRoot(fn func(err error) error) (err error) {
+func (ir *BasicIrr) TraverseToRoot(fn func(err error) error) (err error) {
 	defer CatchFailure(func(e error) { err = e })
 	var inner error = ir
 	for inner != nil {
@@ -63,7 +63,7 @@ func (ir *irr) TraverseToRoot(fn func(err error) error) (err error) {
 	return
 }
 
-func (ir *irr) writeSelfTo(sb *strings.Builder, printTrace bool) {
+func (ir *BasicIrr) writeSelfTo(sb *strings.Builder, printTrace bool) {
 	sb.WriteString(ir.Msg)
 	if printTrace && ir.Trace != nil {
 		sb.WriteRune(' ')
@@ -71,10 +71,10 @@ func (ir *irr) writeSelfTo(sb *strings.Builder, printTrace bool) {
 	}
 }
 
-func (ir *irr) ToString(printTrace bool, split string) string {
+func (ir *BasicIrr) ToString(printTrace bool, split string) string {
 	sb := strings.Builder{}
 	_ = ir.TraverseToSource(func(err error, isSource bool) error {
-		if irr, ok := err.(*irr); ok {
+		if irr, ok := err.(*BasicIrr); ok {
 			irr.writeSelfTo(&sb, printTrace)
 		} else {
 			sb.WriteString(err.Error())
@@ -87,21 +87,21 @@ func (ir *irr) ToString(printTrace bool, split string) string {
 	return sb.String()
 }
 
-func (ir *irr) Error() string {
+func (ir *BasicIrr) Error() string {
 	return ir.ToString(false, "; ")
 }
 
-func (ir *irr) LogWarn(logger interface{ Warn(args ...interface{}) }) IRR {
+func (ir *BasicIrr) LogWarn(logger interface{ Warn(args ...interface{}) }) IRR {
 	logger.Warn(ir.ToString(true, "\n"))
 	return ir
 }
 
-func (ir *irr) LogError(logger interface{ Error(args ...interface{}) }) IRR {
+func (ir *BasicIrr) LogError(logger interface{ Error(args ...interface{}) }) IRR {
 	logger.Error(ir.ToString(true, "\n"))
 	return ir
 }
 
-func (ir *irr) LogFatal(logger interface{ Fatal(args ...interface{}) }) IRR {
+func (ir *BasicIrr) LogFatal(logger interface{ Fatal(args ...interface{}) }) IRR {
 	str := ir.ToString(true, "\n")
 	logger.Fatal(str)
 	// to make sure it has been printed to std output stream
@@ -109,8 +109,8 @@ func (ir *irr) LogFatal(logger interface{ Fatal(args ...interface{}) }) IRR {
 	return ir
 }
 
-func newIrr(formatOrMsg string, args ...interface{}) *irr {
-	err := &irr{}
+func newIrr(formatOrMsg string, args ...interface{}) *BasicIrr {
+	err := &BasicIrr{}
 	if len(args) > 0 {
 		err.Msg = fmt.Sprintf(formatOrMsg, args...)
 	} else {

@@ -143,7 +143,7 @@ IRR interface {
 }
 ```
 
-The `Unwrap()` method, which returns the error directly wrapped by the current irr. It supports the `Unwrap` interface, so irr is fully compatible with the wrap logic of the `errors` library. For example, you can use `errors.Is` to determine if the error type is expected.
+The `Unwrap()` method, which returns the error directly wrapped by the current irr. It supports the `Unwrap` interface, so irr is fully compatible with the wrap logic of the `errors` library. For example, you can use `errors.Is` to determine if the error type expected.
 
 The `Root()` method will return the final error, and if an error wrapped an error with irr, which is another wrapped error that supports Unwrap interface (such as an error created by `%w`), it will continue to search until it finds the first error that cannot be unwrapped.
 
@@ -168,6 +168,17 @@ IRR interface {
 
 ### Traverse, and it's panic handling
 
-## Recommended Practices
+Irr provides two traverse method
 
-## TODO: Not finished yet
+```go
+IRR interface {
+    ...
+    TraverseToSource(fn func(err error, isSource bool) error) (err error)
+    TraverseToRoot(fn func(err error) error) (err error)
+    ...
+}
+```
+
+## Author
+
+kinghand@foxmail.com

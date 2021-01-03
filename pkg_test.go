@@ -46,10 +46,10 @@ func TestTrack(t *testing.T) {
 	prefix := "1 2 irr.TestTrack"
 	assert.Exactly(t, true,
 		traceOut[0][:len(prefix)] == prefix &&
-			strings.Contains(traceOut[0], "/pkg_test.go:"), tracePrint)
+			strings.Contains(traceOut[0], "/pkg_test.go:"), "traceOut[0] not match\n"+tracePrint)
 	assert.Exactly(t, true,
 		traceOut[1][:len(prefix)] == prefix &&
-			strings.Contains(traceOut[1], "/pkg_test.go:"), tracePrint)
+			strings.Contains(traceOut[1], "/pkg_test.go:"), "traceOut[1] not match\n"+tracePrint)
 }
 
 func TestTrackSkip(t *testing.T) {

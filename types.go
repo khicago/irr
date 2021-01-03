@@ -5,7 +5,7 @@ import (
 )
 
 type (
-	irr struct {
+	BasicIrr struct {
 		inner error
 
 		Msg   string     `json:"msg"`
@@ -31,7 +31,7 @@ type (
 	}
 )
 
-var _ IRR = &irr{}
+var _ IRR = &BasicIrr{}
 
 var (
 	ErrUntypedExecutionFailure = errors.New("untyped execution failure")
