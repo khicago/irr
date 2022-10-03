@@ -5,34 +5,66 @@ import (
 )
 
 type (
-	BasicIrr struct {
-		inner error
+	IUnwrap interface {
+		Unwrap() error
+	}
 
-		Msg   string     `json:"msg"`
-		Trace *traceInfo `json:"trace"`
+	ITraverseError interface {
+		Root() error
+		TraverseToRoot(fn func(err error) error) (err error)
+	}
+
+	ITraverseIrr interface {
+		Source() error
+		TraverseToSource(fn func(err error, isSource bool) error) (err error)
+	}
+
+	ITraverseCoder[TCode any] interface {
+		ClosestCode() TCode
+		TraverseCode(fn func(err error, code TCode) error) (err error)
+	}
+
+	ILogCaller interface {
+		LogWarn(logger IWarnLogger) IRR
+		LogError(logger IErrorLogger) IRR
+		LogFatal(logger IFatalLogger) IRR
+	}
+
+	ICoder[TCode any] interface {
+		SetCode(val TCode) IRR
+		GetCode() (val TCode)
+	}
+
+	ITagger interface {
+		SetTag(key, value string)
+		GetTag(key string) (values []string)
 	}
 
 	IRR interface {
+		ITraverseIrr
+
 		error
+		ITraverseError
+		IUnwrap
 
-		Root() error
-		Source() error
-		Unwrap() error
+		ICoder[int64]
+		ITraverseCoder[int64]
 
-		TraverseToSource(fn func(err error, isSource bool) error) (err error)
-		TraverseToRoot(fn func(err error) error) (err error)
-
-		LogWarn(logger interface{ Warn(args ...interface{}) }) IRR
-		LogError(logger interface{ Error(args ...interface{}) }) IRR
-		LogFatal(logger interface{ Fatal(args ...interface{}) }) IRR
+		ITagger
+		ILogCaller
 
 		ToString(printTrace bool, split string) string
 		GetTraceInfo() *traceInfo
 	}
+
+	Spawner interface {
+		Error(formatOrMsg string, args ...interface{}) IRR
+		Wrap(innerErr error, formatOrMsg string, args ...interface{}) IRR
+		TraceSkip(skip int, formatOrMsg string, args ...interface{}) IRR
+		Trace(formatOrMsg string, args ...interface{}) IRR
+		TrackSkip(skip int, innerErr error, formatOrMsg string, args ...interface{}) IRR
+		Track(innerErr error, formatOrMsg string, args ...interface{}) IRR
+	}
 )
 
-var _ IRR = &BasicIrr{}
-
-var (
-	ErrUntypedExecutionFailure = errors.New("untyped execution failure")
-)
+var ErrUntypedExecutionFailure = errors.New("!!!panic")

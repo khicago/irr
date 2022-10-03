@@ -2,6 +2,7 @@ package irr_test
 
 import (
 	"fmt"
+
 	"github.com/khicago/irr"
 )
 
@@ -24,8 +25,8 @@ func ExampleWrap() {
 	fmt.Println(wrappedErr)
 	fmt.Println(wrappedErrWithParam)
 	// Output:
-	// some wrap information; default err message
-	// some wrap information with integer 1; default err message
+	// some wrap information, default err message
+	// some wrap information with integer 1, default err message
 }
 
 func ExampleWrapCustomPrint() {

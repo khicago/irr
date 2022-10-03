@@ -1,149 +1,71 @@
 package irr
 
 import (
-	"errors"
-	"fmt"
-	"github.com/stretchr/testify/assert"
+	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
-var (
-	theIrr, innerIrr   *BasicIrr
-	sourceErr, rootErr error
-)
-
-type testLogger struct{ ret string }
-
-func (l *testLogger) Warn(args ...interface{}) {
-	l.ret = fmt.Sprint(args...)
-}
-func (l *testLogger) Error(args ...interface{}) {
-	l.ret = fmt.Sprint(args...)
-}
-func (l *testLogger) Fatal(args ...interface{}) {
-	l.ret = fmt.Sprint(args...)
+func TestError(t *testing.T) {
+	err := Error("%d %d", 1, 2)
+	assert.Equal(t, "1 2", err.Error(), "err message unmatched")
 }
 
-func init() {
-	theIrr = newIrr("test err %d", 1)
-	innerIrr = newIrr("inner error")
-	theIrr.inner = innerIrr
-	rootErr = errors.New("root error")
-	sourceErr = fmt.Errorf("source error => %w", rootErr)
-	innerIrr.inner = sourceErr
+func TestWrap(t *testing.T) {
+	inner := Error("%d %d", 1, 2)
+	ir := Wrap(inner, "wrap msg")
+	assert.Equal(t, "wrap msg, 1 2", ir.Error(), "err message unmatched")
 }
 
-func TestIrrToString(t *testing.T) {
-	str := theIrr.ToString(false, "=the=split=")
-	assert.Equal(t, "test err 1=the=split=inner error=the=split=source error => root error", str, "")
+func TestTrace(t *testing.T) {
+	ir := Trace("%d %d", 1, 2)
+	tracePrint := ir.ToString(true, ";")
+	prefix := "1 2 irr.TestTrace"
+	assert.Exactly(t, true,
+		tracePrint[:len(prefix)] == prefix &&
+			strings.Contains(tracePrint, "/irr_test.go:"), tracePrint)
 }
 
-func TestIrrError(t *testing.T) {
-	str := theIrr.Error()
-	assert.Equal(t, "test err 1; inner error; source error => root error", str, "")
+func TestTraceSkip(t *testing.T) {
+	ir := TraceSkip(1, "%d %d", 1, 2)
+	tracePrint := ir.ToString(true, ";")
+	prefix := "1 2 testing.tRunner"
+	assert.Exactly(t, true,
+		tracePrint[:len(prefix)] == prefix &&
+			strings.Contains(tracePrint, "/testing.go:"), tracePrint)
 }
 
-func TestIrrRoot(t *testing.T) {
-	assert.Equal(t, rootErr, theIrr.Root(), "root error are not equal")
+func TestTrack(t *testing.T) {
+	inner := Trace("%d %d", 1, 2)
+	ir := Track(inner, "%d %d", 1, 2)
+	tracePrint := ir.ToString(true, "\n")
+	traceOut := strings.Split(tracePrint, "\n")
+
+	assert.Equal(t, 2, len(traceOut), "trace out length not match, "+tracePrint)
+
+	prefix := "1 2 irr.TestTrack"
+	assert.Exactly(t, true,
+		traceOut[0][:len(prefix)] == prefix &&
+			strings.Contains(traceOut[0], "/irr_test.go:"), "traceOut[0] not match\n"+tracePrint)
+	assert.Exactly(t, true,
+		traceOut[1][:len(prefix)] == prefix &&
+			strings.Contains(traceOut[1], "/irr_test.go:"), "traceOut[1] not match\n"+tracePrint)
 }
 
-func TestIrrSource(t *testing.T) {
-	assert.Equal(t, sourceErr, theIrr.Source(), "source error are not equal")
-}
+func TestTrackSkip(t *testing.T) {
+	inner := Trace("%d %d", 1, 2)
+	ir := TrackSkip(1, inner, "%d %d", 1, 2)
+	tracePrint := ir.ToString(true, "\n")
+	traceOut := strings.Split(tracePrint, "\n")
 
-func TestUnwrap(t *testing.T) {
-	assert.Equal(t, innerIrr, theIrr.Unwrap(), "unwrap to innerIrr are not correct")
-	assert.Equal(t, sourceErr, innerIrr.Unwrap(), "unwrap to sourceErr are not correct")
-}
+	assert.Equal(t, 2, len(traceOut), "trace out length not match\n"+tracePrint)
 
-func TestIrrTraverseToSourceStack(t *testing.T) {
-	stack := []error{
-		theIrr, innerIrr, sourceErr,
-	}
-	_ = theIrr.TraverseToSource(func(err error, isSource bool) error {
-		pop := stack[0]
-		stack = stack[1:]
-		assert.Equal(t, pop, err, "wrong error stack")
-		if isSource {
-			assert.Equal(t, 0, len(stack), "stack should finished")
-		}
-		return nil
-	})
-	assert.Equal(t, 0, len(stack), "stack should finished")
-}
-
-func TestIrrTraverseToSourceThrownErr(t *testing.T) {
-	previousErr := errors.New("the previous error")
-	returnedErr := errors.New("the returned error")
-	err := theIrr.TraverseToSource(func(err error, isSource bool) error {
-		if isSource {
-			return returnedErr
-		}
-		return previousErr
-	})
-	assert.Equal(t, returnedErr, err, "return error stack")
-
-	err = theIrr.TraverseToSource(func(err error, isSource bool) error {
-		if isSource {
-			return returnedErr
-		}
-		panic(previousErr)
-	})
-	assert.Equal(t, previousErr, err, "return error stack")
-
-	err = theIrr.TraverseToSource(func(err error, isSource bool) error {
-		panic("some error string")
-	})
-	assert.Exactly(t, true, errors.Is(err, ErrUntypedExecutionFailure), "should returns ErrUntypedExecutionFailure")
-}
-
-func TestIrrTraverseToRootStack(t *testing.T) {
-	stack := []error{
-		theIrr, innerIrr, sourceErr, rootErr,
-	}
-	_ = theIrr.TraverseToRoot(func(err error) error {
-		pop := stack[0]
-		stack = stack[1:]
-		assert.Equal(t, pop, err, "wrong error stack")
-		return nil
-	})
-	assert.Equal(t, 0, len(stack), "stack should finished")
-}
-
-func TestIrrTraverseToRootThrownErr(t *testing.T) {
-	previousErr := errors.New("the previous error")
-	returnedErr := errors.New("the returned error")
-	err := theIrr.TraverseToRoot(func(err error) error {
-		pe := previousErr
-		previousErr = returnedErr
-		return pe
-	})
-	assert.Equal(t, returnedErr, err, "return error stack")
-
-	err = theIrr.TraverseToRoot(func(err error) error {
-		pe := previousErr
-		previousErr = returnedErr
-		panic(pe)
-	})
-	assert.Equal(t, previousErr, err, "return error stack")
-
-	err = theIrr.TraverseToRoot(func(err error) error {
-		panic("some error string")
-	})
-	assert.Exactly(t, true, errors.Is(err, ErrUntypedExecutionFailure), "should returns ErrUntypedExecutionFailure")
-}
-
-func TestLog(t *testing.T) {
-	l := &testLogger{}
-	ir := theIrr.LogWarn(l)
-	assert.Equal(t, theIrr.ToString(true, "\n"), l.ret, "LogWarn failed")
-	assert.Equal(t, theIrr, ir, "ir should be returned by LogWarn")
-
-	ir = theIrr.LogError(l)
-	assert.Equal(t, theIrr.ToString(true, "\n"), l.ret, "LogError failed")
-	assert.Equal(t, theIrr, ir, "ir should be returned by LogError")
-
-	ir = theIrr.LogFatal(l)
-	assert.Equal(t, theIrr.ToString(true, "\n"), l.ret, "LogFatal failed")
-	assert.Equal(t, theIrr, ir, "ir should be returned by LogFatal")
+	prefix, prefixOuter := "1 2 irr.TestTrackSkip", "1 2 testing.tRunner"
+	assert.Exactly(t, true,
+		traceOut[0][:len(prefixOuter)] == prefixOuter &&
+			strings.Contains(traceOut[0], "/testing.go:"), "outer trace not match\n"+tracePrint)
+	assert.Exactly(t, true,
+		traceOut[1][:len(prefix)] == prefix &&
+			strings.Contains(traceOut[1], "/irr_test.go:"), "inner trace not match\n"+tracePrint)
 }
