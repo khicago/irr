@@ -3,7 +3,6 @@ package irr
 import (
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 	"sync"
 )
@@ -102,13 +101,25 @@ func (ir *BasicIrr) TraverseToSource(fn func(err error, isSource bool) error) (e
 	return
 }
 
-func (ir *BasicIrr) writeSelfTo(sb *strings.Builder, printTrace bool) {
-	if ir.Code != 0 {
-		sb.WriteString("code= ")
-		sb.WriteString(strconv.FormatInt(ir.Code, 10))
-		sb.WriteString(", ")
+// GetCodeStr
+// Determines how the code is written to the message,
+// so that this method can input an empty string to
+// avoid outputting the code in the message
+func (ir *BasicIrr) GetCodeStr() string {
+	if ir.Code == 0 {
+		return ""
+	}
+	return fmt.Sprintf("code(%d), ", ir.Code)
+}
+
+func (ir *BasicIrr) writeSelfTo(sb *strings.Builder, printTrace bool, printCode bool) {
+	if printCode {
+		if codeStr := ir.GetCodeStr(); codeStr != "" {
+			sb.WriteString(codeStr)
+		}
 	}
 	sb.WriteString(ir.Msg)
+
 	if ir.Tags != nil && len(ir.Tags) > 0 {
 		for _, str := range ir.Tags {
 			sb.WriteRune('[')
@@ -122,12 +133,16 @@ func (ir *BasicIrr) writeSelfTo(sb *strings.Builder, printTrace bool) {
 	}
 }
 
+// ToString
+// consecutive equal codes will be printed only once during the traceback process
 func (ir *BasicIrr) ToString(printTrace bool, split string) string {
 	sb := strings.Builder{}
+	lastCode := int64(0)
 	_ = ir.TraverseToSource(func(err error, isSource bool) error {
 		if irr, ok := err.(*BasicIrr); ok {
 			// since have to continue traversing, irr only output itself
-			irr.writeSelfTo(&sb, printTrace)
+			irr.writeSelfTo(&sb, printTrace, lastCode != irr.Code)
+			lastCode = irr.Code
 		} else {
 			sb.WriteString(err.Error())
 		}
@@ -181,8 +196,11 @@ func (ir *BasicIrr) GetCode() (val int64) {
 func (ir *BasicIrr) ClosestCode() (val int64) {
 	eExit := errors.New("stop")
 	if err := ir.TraverseCode(func(_ error, code int64) error {
-		val = code
-		return eExit
+		if code != 0 {
+			val = code
+			return eExit
+		}
+		return nil
 	}); err != nil && err != eExit {
 		panic("traverse panic")
 	}

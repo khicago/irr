@@ -5,6 +5,31 @@ import (
 )
 
 type (
+	ILogCaller interface {
+		LogWarn(logger IWarnLogger) IRR
+		LogError(logger IErrorLogger) IRR
+		LogFatal(logger IFatalLogger) IRR
+	}
+)
+
+type (
+	ICoder[TCode any] interface {
+		ICodeGetter[TCode]
+		SetCode(val TCode) IRR
+	}
+
+	ICodeGetter[TCode any] interface {
+		GetCode() (val TCode)
+		GetCodeStr() string
+	}
+
+	ITagger interface {
+		SetTag(key, value string)
+		GetTag(key string) (values []string)
+	}
+)
+
+type (
 	IUnwrap interface {
 		Unwrap() error
 	}
@@ -22,22 +47,7 @@ type (
 	ITraverseCoder[TCode any] interface {
 		ClosestCode() TCode
 		TraverseCode(fn func(err error, code TCode) error) (err error)
-	}
-
-	ILogCaller interface {
-		LogWarn(logger IWarnLogger) IRR
-		LogError(logger IErrorLogger) IRR
-		LogFatal(logger IFatalLogger) IRR
-	}
-
-	ICoder[TCode any] interface {
-		SetCode(val TCode) IRR
-		GetCode() (val TCode)
-	}
-
-	ITagger interface {
-		SetTag(key, value string)
-		GetTag(key string) (values []string)
+		ICodeGetter[TCode]
 	}
 
 	IRR interface {
