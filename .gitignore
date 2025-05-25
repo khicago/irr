@@ -2,6 +2,8 @@
 .DS_Store
 .vscode
 coverage.txt
+coverage.html
+coverage.out
 
 vendor
 logs

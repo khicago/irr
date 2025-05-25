@@ -277,6 +277,8 @@ func handleError(err error) (httpCode int, response map[string]interface{}) {
 
 **🏗️ Error Code Architecture Best Practices:**
 
+> 💡 **Want to dive deeper?** Check out our comprehensive [IRC Enterprise Error Handling Guide](./docs/irc-enterprise-practices.md) for production-ready patterns, monitoring strategies, and real-world examples.
+
 1. **📊 Systematic Code Ranges**
    - `1000-1999`: Infrastructure/System errors (DB, network, memory)
    - `2000-2999`: Business logic errors (validation, authorization)  
@@ -637,6 +639,8 @@ go test -v ./...
 ## 📚 Documentation
 
 - 📖 [API Documentation](https://godoc.org/github.com/khicago/irr)
+- 🏢 [IRC Enterprise Error Handling Guide](./docs/irc-enterprise-practices.md) - **Production-ready patterns and best practices**
+- 📊 [Test Coverage Improvement Summary](./docs/test-coverage-improvement.md)
 - 🎯 [Examples](./examples/)
 - 🔧 [Best Practices Guide](./docs/best-practices.md)
 - 📊 [Performance Guide](./docs/performance.md)
