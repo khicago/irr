@@ -24,14 +24,17 @@ package irr
 //
 // Note: ErrorC is typically used when you wish to categorize errors or define specific status codes for easier error handling and response later on.
 func ErrorC[T int64](code T, formatOrMsg string, args ...any) IRR {
+	recordErrorCreated()
 	err := newBasicIrr(formatOrMsg, args...)
-	return err.SetCode(int64(code))
+	err.SetCode(int64(code))
+	return err
 }
 
 // Error creates a new IRR error object with a formatted message.
 // formatOrMsg is a string that accepts printf style format specifiers.
 // args are variadic parameters that represent the arguments for the formatting string.
 func Error(formatOrMsg string, args ...any) IRR {
+	recordErrorCreated()
 	err := newBasicIrr(formatOrMsg, args...)
 	return err
 }
@@ -41,6 +44,8 @@ func Error(formatOrMsg string, args ...any) IRR {
 // formatOrMsg is a string that accepts printf style format specifiers.
 // args are variadic parameters that represent the arguments for the formatting string.
 func Wrap(innerErr error, formatOrMsg string, args ...any) IRR {
+	recordErrorCreated()
+	recordErrorWrapped()
 	err := newBasicIrr(formatOrMsg, args...)
 	err.inner = innerErr
 	return err
@@ -51,6 +56,8 @@ func Wrap(innerErr error, formatOrMsg string, args ...any) IRR {
 // formatOrMsg is a string that accepts printf style format specifiers.
 // args are variadic parameters that represent the arguments for the formatting string.
 func TraceSkip(skip int, formatOrMsg string, args ...any) IRR {
+	recordErrorCreated()
+	recordErrorWithTrace()
 	err := newBasicIrr(formatOrMsg, args...)
 	err.Trace = createTraceInfo(skip+1, nil)
 	return err
@@ -70,6 +77,9 @@ func Trace(formatOrMsg string, args ...any) IRR {
 // formatOrMsg is a string that accepts printf style format specifiers.
 // args are variadic parameters that represent the arguments for the formatting string.
 func TrackSkip(skip int, innerErr error, formatOrMsg string, args ...any) IRR {
+	recordErrorCreated()
+	recordErrorWrapped()
+	recordErrorWithTrace()
 	err := newBasicIrr(formatOrMsg, args...)
 	err.inner = innerErr
 	err.Trace = createTraceInfo(skip+1, innerErr)

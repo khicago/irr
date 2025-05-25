@@ -29,7 +29,7 @@ func ExampleWrap() {
 	// some wrap information with integer 1, default err message
 }
 
-func ExampleWrapCustomPrint() {
+func ExampleWrap_customPrint() {
 	err := fmt.Errorf("default err message")
 	wrappedErr := irr.Wrap(err, "some wrap information")
 	wrappedErrWithParam := irr.Wrap(err, "some wrap information with integer %d", 1)

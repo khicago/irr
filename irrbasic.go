@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 type (
@@ -12,11 +13,13 @@ type (
 		inner error
 
 		Code  int64      `json:"code"`
-		Tags  []string   `json:"tags"`
 		Msg   string     `json:"msg"`
 		Trace *traceInfo `json:"trace"`
 
-		mu sync.RWMutex
+		// 使用 map 替代 slice，提升查找性能
+		// 使用原子操作的指针，减少锁竞争
+		tags atomic.Pointer[map[string][]string] `json:"-"`
+		mu   sync.RWMutex                        // 保留锁用于tag操作的原子性
 	}
 )
 
@@ -60,10 +63,19 @@ func (ir *BasicIrr) Root() error {
 // TraverseToRoot
 // the implementation of ITraverseError
 func (ir *BasicIrr) TraverseToRoot(fn func(err error) error) (err error) {
-	defer CatchFailure(func(e error) { err = e })
+	recordTraverseOp()
+	defer func() {
+		if r := recover(); r != nil {
+			if e, ok := r.(error); ok {
+				err = e
+			} else {
+				err = Wrap(ErrUntypedExecutionFailure, "panic = %v", r)
+			}
+		}
+	}()
 	for inner := error(ir); inner != nil; inner = errors.Unwrap(inner) {
 		if err = fn(inner); err != nil {
-			return
+			return err
 		}
 	}
 	return
@@ -84,21 +96,32 @@ func (ir *BasicIrr) Source() (err error) {
 // TraverseToSource
 // the implementation of ITraverseIrr
 func (ir *BasicIrr) TraverseToSource(fn func(err error, isSource bool) error) (err error) {
-	defer CatchFailure(func(e error) { err = e })
+	recordTraverseOp()
+	defer func() {
+		if r := recover(); r != nil {
+			if e, ok := r.(error); ok {
+				err = e
+			} else {
+				err = Wrap(ErrUntypedExecutionFailure, "panic = %v", r)
+			}
+		}
+	}()
 	for cur := ir; cur != nil; {
 		isCurSource := cur.inner == nil
 		err = fn(cur, isCurSource)
 		if isCurSource {
-			break
+			// 只有在 source 时才返回函数的结果
+			return err
 		}
 		if next, ok := cur.inner.(*BasicIrr); ok {
 			cur = next
 			continue
 		}
+		// 到达最后一个非 BasicIrr 的错误，这是 source
 		err = fn(cur.inner, true)
-		break
+		return err
 	}
-	return
+	return nil
 }
 
 // GetCodeStr
@@ -120,11 +143,16 @@ func (ir *BasicIrr) writeSelfTo(sb *strings.Builder, printTrace bool, printCode 
 	}
 	sb.WriteString(ir.Msg)
 
-	if ir.Tags != nil && len(ir.Tags) > 0 {
-		for _, str := range ir.Tags {
-			sb.WriteRune('[')
-			sb.WriteString(str)
-			sb.WriteString("] ")
+	// 获取tags进行输出
+	if tagMap := ir.tags.Load(); tagMap != nil && len(*tagMap) > 0 {
+		for key, values := range *tagMap {
+			for _, value := range values {
+				sb.WriteRune('[')
+				sb.WriteString(key)
+				sb.WriteRune(':')
+				sb.WriteString(value)
+				sb.WriteString("] ")
+			}
 		}
 	}
 	if printTrace && ir.Trace != nil {
@@ -181,6 +209,9 @@ func (ir *BasicIrr) LogFatal(logger IFatalLogger) IRR {
 // SetCode
 // the implementation of ICoder[int64]
 func (ir *BasicIrr) SetCode(val int64) IRR {
+	if val != 0 {
+		recordErrorWithCode(val)
+	}
 	ir.Code = val
 	return ir
 }
@@ -224,33 +255,43 @@ func (ir *BasicIrr) TraverseCode(fn func(err error, code int64) error) (err erro
 // the implementation of ITagger
 func (ir *BasicIrr) SetTag(key, val string) {
 	ir.mu.Lock()
-	if ir.Tags == nil {
-		ir.Tags = make([]string, 0)
+	defer ir.mu.Unlock()
+
+	// 获取当前的tags map
+	currentTags := ir.tags.Load()
+	var newTags map[string][]string
+
+	if currentTags == nil {
+		newTags = make(map[string][]string)
+	} else {
+		// 复制现有的tags
+		newTags = make(map[string][]string, len(*currentTags))
+		for k, v := range *currentTags {
+			newTags[k] = make([]string, len(v))
+			copy(newTags[k], v)
+		}
 	}
-	ir.Tags = append(ir.Tags, fmt.Sprintf("%s:%s", key, val))
-	ir.mu.Unlock()
+
+	// 添加新的tag
+	newTags[key] = append(newTags[key], val)
+	ir.tags.Store(&newTags)
 }
 
 // GetTag
 // the implementation of ITagger
 func (ir *BasicIrr) GetTag(key string) (val []string) {
-	ir.mu.RLock()
-	val = make([]string, 0)
-	if ir.Tags == nil {
-		ir.mu.RUnlock()
-		return val
+	tagMap := ir.tags.Load()
+	if tagMap == nil {
+		return nil
 	}
-	lenK := len(key)
-	for _, str := range ir.Tags {
-		if len(str) < lenK+2 {
-			continue
-		}
-		if str[:lenK] == key {
-			val = append(val, str[lenK+1:])
-		}
+	values := (*tagMap)[key]
+	if values == nil {
+		return nil
 	}
-	ir.mu.RUnlock()
-	return val
+	// 返回副本以避免竞态条件
+	result := make([]string, len(values))
+	copy(result, values)
+	return result
 }
 
 func (ir *BasicIrr) GetTraceInfo() *traceInfo {

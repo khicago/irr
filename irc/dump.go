@@ -28,7 +28,7 @@ func DumpToCodeNError(succ, unknown Code, err error, msgOrFmt string, args ...an
 		}
 	} else if codeg, ok := err.(ICodeGetter); ok {
 		code = Code(codeg.GetCode())
-		codeStr := codet.GetCodeStr()
+		codeStr := codeg.GetCodeStr()
 		if lenCodeStr := len(codeStr); len(errMsg) > lenCodeStr && errMsg[:lenCodeStr] == codeStr {
 			errMsg = errMsg[lenCodeStr:]
 		}
