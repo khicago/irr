@@ -50,6 +50,22 @@ type (
 		ICodeGetter[TCode]
 	}
 
+	// 新的清晰错误码API接口
+	ICodeManager[TCode any] interface {
+		// 错误码获取
+		NearestCode() TCode // 最近的有效错误码
+		CurrentCode() TCode // 当前对象的错误码
+		RootCode() TCode    // 根错误的错误码
+
+		// 错误码状态检查
+		HasCurrentCode() bool // 当前对象是否设置了错误码
+		HasAnyCode() bool     // 错误链中是否有任何错误码
+
+		// 向后兼容（标记为废弃）
+		GetCode() TCode     // @deprecated: 使用 NearestCode()
+		ClosestCode() TCode // @deprecated: 使用 NearestCode()
+	}
+
 	IRR interface {
 		ITraverseIrr
 
@@ -57,7 +73,10 @@ type (
 		ITraverseError
 		IUnwrap
 
-		ICoder[int64]
+		ICodeManager[int64]    // 使用新的清晰错误码API
+		SetCode(val int64) IRR // 保留SetCode方法
+		GetCodeStr() string    // 保留GetCodeStr方法
+
 		ITraverseCoder[int64]
 
 		ITagger

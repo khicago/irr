@@ -640,6 +640,7 @@ go test -v ./...
 
 - 📖 [API Documentation](https://godoc.org/github.com/khicago/irr)
 - 🏢 [IRC Enterprise Error Handling Guide](./docs/irc-enterprise-practices.md) - **Production-ready patterns and best practices**
+- 🔧 [New Error Code API Design](./docs/new-error-code-api.md)
 - 📊 [Test Coverage Improvement Summary](./docs/test-coverage-improvement.md)
 - 🎯 [Examples](./examples/)
 - 🔧 [Best Practices Guide](./docs/best-practices.md)

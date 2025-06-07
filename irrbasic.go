@@ -12,9 +12,10 @@ type (
 	BasicIrr struct {
 		inner error
 
-		Code  int64      `json:"code"`
-		Msg   string     `json:"msg"`
-		Trace *traceInfo `json:"trace"`
+		Code    int64      `json:"code"`
+		codeSet bool       `json:"code_set"` // 跟踪是否显式设置过错误码
+		Msg     string     `json:"msg"`
+		Trace   *traceInfo `json:"trace"`
 
 		// 使用 map 替代 slice，提升查找性能
 		// 使用原子操作的指针，减少锁竞争
@@ -207,25 +208,23 @@ func (ir *BasicIrr) LogFatal(logger IFatalLogger) IRR {
 }
 
 // SetCode
-// the implementation of ICoder[int64]
+// the implementation of SetCode method
 func (ir *BasicIrr) SetCode(val int64) IRR {
 	if val != 0 {
 		recordErrorWithCode(val)
 	}
 	ir.Code = val
+	ir.codeSet = true // 标记已设置错误码
 	return ir
 }
 
-// GetCode
-// the implementation of ICoder[int64]
-func (ir *BasicIrr) GetCode() (val int64) {
-	return ir.Code
-}
+// === 新的清晰错误码API ===
 
-// ClosestCode
-// the implementation of ITraverseCoder[int64]
-func (ir *BasicIrr) ClosestCode() (val int64) {
+// NearestCode 返回错误链中最近的有效错误码（非零）
+// 这是推荐使用的方法，符合用户直觉
+func (ir *BasicIrr) NearestCode() int64 {
 	eExit := errors.New("stop")
+	var val int64
 	if err := ir.TraverseCode(func(_ error, code int64) error {
 		if code != 0 {
 			val = code
@@ -238,14 +237,76 @@ func (ir *BasicIrr) ClosestCode() (val int64) {
 	return val
 }
 
+// CurrentCode 返回当前错误对象的错误码（可能为0）
+func (ir *BasicIrr) CurrentCode() int64 {
+	return ir.Code
+}
+
+// RootCode 返回错误链根部的错误码
+func (ir *BasicIrr) RootCode() int64 {
+	var rootCode int64
+	var rootErr error
+
+	// 先获取根错误
+	_ = ir.TraverseToSource(func(err error, isSource bool) error {
+		if isSource {
+			rootErr = err
+		}
+		return nil
+	})
+
+	// 检查根错误是否有错误码
+	if rootErr != nil {
+		if t, ok := rootErr.(*BasicIrr); ok {
+			rootCode = t.Code
+		} else if t, ok := rootErr.(interface{ CurrentCode() int64 }); ok {
+			rootCode = t.CurrentCode()
+		} else if t, ok := rootErr.(interface{ GetCode() int64 }); ok {
+			// 兼容其他实现了GetCode的错误类型
+			rootCode = t.GetCode()
+		}
+	}
+
+	return rootCode
+}
+
+// HasCurrentCode 检查当前错误对象是否显式设置了错误码
+func (ir *BasicIrr) HasCurrentCode() bool {
+	return ir.codeSet
+}
+
+// HasAnyCode 检查错误链中是否有任何错误码
+func (ir *BasicIrr) HasAnyCode() bool {
+	return ir.NearestCode() != 0
+}
+
+// === 向后兼容的废弃方法 ===
+
+// GetCode 返回最近的有效错误码
+// Deprecated: 使用 NearestCode() 获得更清晰的语义
+func (ir *BasicIrr) GetCode() int64 {
+	return ir.NearestCode()
+}
+
+// ClosestCode 返回最近的有效错误码
+// Deprecated: 使用 NearestCode() 获得更清晰的语义
+func (ir *BasicIrr) ClosestCode() int64 {
+	return ir.NearestCode()
+}
+
 // TraverseCode
 // the implementation of ITraverseCoder[int64]
 func (ir *BasicIrr) TraverseCode(fn func(err error, code int64) error) (err error) {
 	return ir.TraverseToRoot(func(err error) error {
-		if t, ok := err.(ICoder[int64]); ok {
-			if err = fn(err, t.GetCode()); err != nil {
-				return err
-			}
+		var code int64
+		if t, ok := err.(interface{ CurrentCode() int64 }); ok {
+			code = t.CurrentCode()
+		} else if t, ok := err.(interface{ GetCode() int64 }); ok {
+			// 兼容其他实现了GetCode的错误类型
+			code = t.GetCode()
+		}
+		if err = fn(err, code); err != nil {
+			return err
 		}
 		return nil
 	})

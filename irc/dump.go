@@ -20,13 +20,24 @@ func DumpToCodeNError(succ, unknown Code, err error, msgOrFmt string, args ...an
 
 	code = unknown
 	errMsg := err.Error()
-	if codet, ok := err.(ICodeTraverse); ok {
+
+	// 优先使用新的NearestCode API
+	if codet, ok := err.(interface{ NearestCode() int64 }); ok {
+		code = Code(codet.NearestCode())
+		if codeStr, ok := err.(interface{ GetCodeStr() string }); ok {
+			if lenCodeStr := len(codeStr.GetCodeStr()); len(errMsg) > lenCodeStr && errMsg[:lenCodeStr] == codeStr.GetCodeStr() {
+				errMsg = errMsg[lenCodeStr:]
+			}
+		}
+	} else if codet, ok := err.(ICodeTraverse); ok {
+		// 向后兼容：使用ClosestCode
 		code = Code(codet.ClosestCode())
 		codeStr := codet.GetCodeStr()
 		if lenCodeStr := len(codeStr); len(errMsg) > lenCodeStr && errMsg[:lenCodeStr] == codeStr {
 			errMsg = errMsg[lenCodeStr:]
 		}
 	} else if codeg, ok := err.(ICodeGetter); ok {
+		// 向后兼容：使用GetCode
 		code = Code(codeg.GetCode())
 		codeStr := codeg.GetCodeStr()
 		if lenCodeStr := len(codeStr); len(errMsg) > lenCodeStr && errMsg[:lenCodeStr] == codeStr {
