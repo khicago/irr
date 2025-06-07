@@ -3,6 +3,9 @@ package result
 import (
 	"errors"
 	"testing"
+	"sync"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestOK(t *testing.T) {
@@ -127,4 +130,184 @@ func TestAndThen(t *testing.T) {
 	if newResult.Ok() {
 		t.Errorf("Expected AndThen to propagate error, got an Ok Result")
 	}
+}
+
+// TestResultAdditionalMethods 测试额外的方法
+func TestResultAdditionalMethods(t *testing.T) {
+	t.Run("Ok方法", func(t *testing.T) {
+		okResult := OK(42)
+		errResult := Err[int](errors.New("test error"))
+		
+		assert.True(t, okResult.Ok())
+		assert.False(t, errResult.Ok())
+	})
+
+	t.Run("Err方法", func(t *testing.T) {
+		okResult := OK(42)
+		errResult := Err[int](errors.New("test error"))
+		
+		assert.Nil(t, okResult.Err())
+		assert.NotNil(t, errResult.Err())
+	})
+
+	t.Run("Unwrap方法-错误情况", func(t *testing.T) {
+		errResult := Err[int](errors.New("test error"))
+		
+		assert.Panics(t, func() {
+			errResult.Unwrap()
+		})
+	})
+
+	t.Run("UnwrapErr方法-成功情况", func(t *testing.T) {
+		okResult := OK(42)
+		
+		assert.Panics(t, func() {
+			okResult.UnwrapErr()
+		})
+	})
+
+	t.Run("UnwrapErr方法-错误情况", func(t *testing.T) {
+		testErr := errors.New("test error")
+		errResult := Err[int](testErr)
+		
+		err := errResult.UnwrapErr()
+		assert.Equal(t, testErr, err)
+	})
+
+	t.Run("UnwrapOr方法-成功情况", func(t *testing.T) {
+		okResult := OK(42)
+		value := okResult.UnwrapOr(0)
+		assert.Equal(t, 42, value)
+	})
+
+	t.Run("UnwrapOr方法-错误情况", func(t *testing.T) {
+		errResult := Err[int](errors.New("test error"))
+		value := errResult.UnwrapOr(99)
+		assert.Equal(t, 99, value)
+	})
+
+	t.Run("Match方法-成功情况", func(t *testing.T) {
+		okResult := OK(42)
+		value, err := okResult.Match()
+		assert.Equal(t, 42, value)
+		assert.Nil(t, err)
+	})
+
+	t.Run("Match方法-错误情况", func(t *testing.T) {
+		testErr := errors.New("test error")
+		errResult := Err[int](testErr)
+		value, err := errResult.Match()
+		assert.Equal(t, 0, value)
+		assert.Equal(t, testErr, err)
+	})
+
+	t.Run("Expect方法-成功情况", func(t *testing.T) {
+		okResult := OK(42)
+		value := okResult.Expect("should not panic")
+		assert.Equal(t, 42, value)
+	})
+
+	t.Run("Expect方法-错误情况", func(t *testing.T) {
+		errResult := Err[int](errors.New("test error"))
+		assert.Panics(t, func() {
+			errResult.Expect("custom message")
+		})
+	})
+}
+
+// TestResultComplexChaining 测试复杂的链式操作
+func TestResultComplexChaining(t *testing.T) {
+	t.Run("成功的复杂链", func(t *testing.T) {
+		result := OK(10)
+		
+		// 测试基本的链式操作
+		value1 := result.UnwrapOr(0)
+		assert.Equal(t, 10, value1)
+		
+		// 测试Match方法
+		value2, err := result.Match()
+		assert.Equal(t, 10, value2)
+		assert.Nil(t, err)
+	})
+
+	t.Run("中途失败的复杂链", func(t *testing.T) {
+		errResult := Err[int](errors.New("middle error"))
+		
+		// 测试错误情况的链式操作
+		value := errResult.UnwrapOr(99)
+		assert.Equal(t, 99, value)
+		
+		// 测试Match方法
+		value2, err := errResult.Match()
+		assert.Equal(t, 0, value2)
+		assert.NotNil(t, err)
+		assert.Contains(t, err.Error(), "middle error")
+	})
+}
+
+// TestResultEdgeCases 测试边界情况
+func TestResultEdgeCases(t *testing.T) {
+	t.Run("零值处理", func(t *testing.T) {
+		zeroResult := OK(0)
+		assert.True(t, zeroResult.Ok())
+		assert.Equal(t, 0, zeroResult.Unwrap())
+	})
+
+	t.Run("空字符串处理", func(t *testing.T) {
+		emptyResult := OK("")
+		assert.True(t, emptyResult.Ok())
+		assert.Equal(t, "", emptyResult.Unwrap())
+	})
+
+	t.Run("nil指针处理", func(t *testing.T) {
+		var ptr *int
+		nilResult := OK(ptr)
+		assert.True(t, nilResult.Ok())
+		assert.Nil(t, nilResult.Unwrap())
+	})
+
+	t.Run("大数值处理", func(t *testing.T) {
+		bigNum := int64(9223372036854775807) // math.MaxInt64
+		bigResult := OK(bigNum)
+		assert.True(t, bigResult.Ok())
+		assert.Equal(t, bigNum, bigResult.Unwrap())
+	})
+}
+
+// TestResultConcurrency 测试并发安全性
+func TestResultConcurrency(t *testing.T) {
+	t.Run("并发读取", func(t *testing.T) {
+		result := OK(42)
+		
+		var wg sync.WaitGroup
+		for i := 0; i < 100; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				assert.True(t, result.Ok())
+				assert.Equal(t, 42, result.Unwrap())
+			}()
+		}
+		wg.Wait()
+	})
+
+	t.Run("并发UnwrapOr操作", func(t *testing.T) {
+		result := OK(10)
+		
+		var wg sync.WaitGroup
+		results := make([]int, 100)
+		
+		for i := 0; i < 100; i++ {
+			wg.Add(1)
+			go func(index int) {
+				defer wg.Done()
+				results[index] = result.UnwrapOr(index)
+			}(i)
+		}
+		wg.Wait()
+		
+		for _, r := range results {
+			assert.Equal(t, 10, r)
+		}
+	})
 }

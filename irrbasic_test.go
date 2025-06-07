@@ -1,9 +1,12 @@
 package irr
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -508,5 +511,505 @@ func TestNewErrorCodeAPI_EdgeCases(t *testing.T) {
 		assert.Equal(t, int64(-1), err.NearestCode())
 		assert.True(t, err.HasCurrentCode())
 		assert.True(t, err.HasAnyCode())
+	})
+}
+
+// TestGetCodeStr 测试GetCodeStr方法
+func TestGetCodeStr(t *testing.T) {
+	tests := []struct {
+		name     string
+		code     int64
+		expected string
+	}{
+		{
+			name:     "零错误码",
+			code:     0,
+			expected: "",
+		},
+		{
+			name:     "非零错误码",
+			code:     404,
+			expected: "code(404), ",
+		},
+		{
+			name:     "负数错误码",
+			code:     -1,
+			expected: "code(-1), ",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := Error("test error").SetCode(tt.code)
+			assert.Equal(t, tt.expected, err.GetCodeStr())
+		})
+	}
+}
+
+// TestWriteSelfTo 测试writeSelfTo方法
+func TestWriteSelfTo(t *testing.T) {
+	t.Run("基本输出", func(t *testing.T) {
+		err := Error("test message").SetCode(404)
+		// 通过ToString方法间接测试writeSelfTo
+		result := err.ToString(false, "")
+		
+		expected := "code(404), test message"
+		assert.Equal(t, expected, result)
+	})
+
+	t.Run("不打印错误码", func(t *testing.T) {
+		err := Error("test message").SetCode(404)
+		// 测试GetCodeStr方法
+		codeStr := err.GetCodeStr()
+		assert.Equal(t, "code(404), ", codeStr)
+	})
+
+	t.Run("零错误码不打印", func(t *testing.T) {
+		err := Error("test message")
+		codeStr := err.GetCodeStr()
+		assert.Equal(t, "", codeStr)
+	})
+
+	t.Run("带标签输出", func(t *testing.T) {
+		err := Error("test message")
+		err.SetTag("module", "auth")
+		err.SetTag("severity", "high")
+		result := err.ToString(false, "")
+		
+		// 验证基本消息
+		assert.NotEmpty(t, result)
+		// 验证标签存在
+		moduleTags := err.GetTag("module")
+		severityTags := err.GetTag("severity")
+		assert.Equal(t, []string{"auth"}, moduleTags)
+		assert.Equal(t, []string{"high"}, severityTags)
+	})
+
+	t.Run("带堆栈跟踪输出", func(t *testing.T) {
+		err := Trace("test message")
+		result := err.ToString(true, "")
+		
+		// 验证基本消息存在
+		assert.NotEmpty(t, result)
+		// 验证堆栈跟踪信息存在
+		traceInfo := err.GetTraceInfo()
+		assert.NotNil(t, traceInfo)
+		traceStr := traceInfo.String()
+		assert.NotEmpty(t, traceStr)
+	})
+}
+
+// TestSetTag 测试SetTag方法
+func TestSetTag(t *testing.T) {
+	t.Run("设置单个标签", func(t *testing.T) {
+		err := Error("test error")
+		err.SetTag("module", "auth")
+		
+		tags := err.GetTag("module")
+		assert.Equal(t, []string{"auth"}, tags)
+	})
+
+	t.Run("设置多个相同键的标签", func(t *testing.T) {
+		err := Error("test error")
+		err.SetTag("module", "auth")
+		err.SetTag("module", "user")
+		
+		tags := err.GetTag("module")
+		assert.Equal(t, []string{"auth", "user"}, tags)
+	})
+
+	t.Run("设置不同键的标签", func(t *testing.T) {
+		err := Error("test error")
+		err.SetTag("module", "auth")
+		err.SetTag("severity", "high")
+		
+		moduleTags := err.GetTag("module")
+		severityTags := err.GetTag("severity")
+		assert.Equal(t, []string{"auth"}, moduleTags)
+		assert.Equal(t, []string{"high"}, severityTags)
+	})
+
+	t.Run("并发设置标签", func(t *testing.T) {
+		err := Error("test error")
+		
+		// 并发设置标签
+		var wg sync.WaitGroup
+		for i := 0; i < 10; i++ {
+			wg.Add(1)
+			go func(index int) {
+				defer wg.Done()
+				err.SetTag("concurrent", fmt.Sprintf("value%d", index))
+			}(i)
+		}
+		wg.Wait()
+		
+		tags := err.GetTag("concurrent")
+		assert.Equal(t, 10, len(tags))
+	})
+}
+
+// TestGetTag 测试GetTag方法
+func TestGetTag(t *testing.T) {
+	t.Run("获取存在的标签", func(t *testing.T) {
+		err := Error("test error")
+		err.SetTag("module", "auth")
+		err.SetTag("module", "user")
+		
+		tags := err.GetTag("module")
+		assert.Equal(t, []string{"auth", "user"}, tags)
+	})
+
+	t.Run("获取不存在的标签", func(t *testing.T) {
+		err := Error("test error")
+		
+		tags := err.GetTag("nonexistent")
+		assert.Nil(t, tags)
+	})
+
+	t.Run("获取空标签", func(t *testing.T) {
+		err := Error("test error")
+		err.SetTag("empty", "")
+		
+		tags := err.GetTag("empty")
+		assert.Equal(t, []string{""}, tags)
+	})
+
+	t.Run("标签返回副本", func(t *testing.T) {
+		err := Error("test error")
+		err.SetTag("module", "auth")
+		
+		tags1 := err.GetTag("module")
+		tags2 := err.GetTag("module")
+		
+		// 修改返回的切片不应影响原始数据
+		tags1[0] = "modified"
+		assert.Equal(t, []string{"auth"}, tags2)
+	})
+}
+
+// TestLogStats 测试LogStats方法
+func TestLogStats(t *testing.T) {
+	// 重置指标以确保测试的独立性
+	ResetMetrics()
+	
+	// 创建一些错误以生成统计数据
+	Error("test1").SetCode(404)
+	Error("test2").SetCode(500)
+	Trace("test3")
+	Wrap(errors.New("inner"), "outer")
+	
+	// 测试LogStats - 使用实现了正确接口的logger
+	logger := &mockStatsLogger{}
+	LogStats(logger)
+	
+	// 验证日志输出包含统计信息
+	assert.NotNil(t, logger.loggedMetrics)
+	assert.True(t, logger.loggedMetrics.ErrorCreated > 0)
+	assert.True(t, logger.loggedMetrics.ErrorWithCode > 0)
+	assert.True(t, logger.loggedMetrics.ErrorWithTrace > 0)
+	assert.True(t, logger.loggedMetrics.ErrorWrapped > 0)
+}
+
+// 实现ErrorStatsLogger接口的mock logger
+type mockStatsLogger struct {
+	loggedMetrics *ErrorMetrics
+}
+
+func (m *mockStatsLogger) LogErrorStats(metrics *ErrorMetrics) {
+	m.loggedMetrics = metrics
+}
+
+// TestCatchFailure 测试CatchFailure方法
+func TestCatchFailure(t *testing.T) {
+	t.Run("测试CatchFailure实际用法", func(t *testing.T) {
+		// 测试CatchFailure的实际使用场景
+		var caughtError error
+		
+		func() {
+			defer CatchFailure(func(err error) {
+				caughtError = err
+			})
+			panic("test panic")
+		}()
+		
+		assert.NotNil(t, caughtError)
+		// 验证错误类型和消息 - CatchFailure会包装非error类型的panic
+		assert.Contains(t, caughtError.Error(), "panic = test panic")
+	})
+
+	t.Run("测试CatchFailure无panic", func(t *testing.T) {
+		var caughtError error
+		
+		func() {
+			defer CatchFailure(func(err error) {
+				caughtError = err
+			})
+			// 正常执行，无panic
+		}()
+		
+		assert.Nil(t, caughtError)
+	})
+
+	t.Run("测试CatchFailure捕获error类型panic", func(t *testing.T) {
+		var caughtError error
+		testErr := errors.New("test error")
+		
+		func() {
+			defer CatchFailure(func(err error) {
+				caughtError = err
+			})
+			panic(testErr)
+		}()
+		
+		assert.Equal(t, testErr, caughtError)
+	})
+}
+
+// TestTraceString 测试trace.go中的String方法
+func TestTraceString(t *testing.T) {
+	err := Trace("test trace")
+	traceInfo := err.GetTraceInfo()
+	
+	assert.NotNil(t, traceInfo)
+	
+	// 测试String方法
+	str := traceInfo.String()
+	assert.NotEmpty(t, str)
+	// 验证堆栈跟踪信息的基本结构
+	assert.True(t, len(str) > 0)
+}
+
+// TestTraceRelease 测试trace.go中的Release方法
+func TestTraceRelease(t *testing.T) {
+	err := Trace("test trace")
+	traceInfo := err.GetTraceInfo()
+	
+	assert.NotNil(t, traceInfo)
+	
+	// 测试Release方法
+	traceInfo.Release()
+	// Release方法主要用于对象池，这里主要测试不会panic
+}
+
+// TestCreateTraceInfo 测试utils.go中的createTraceInfo方法
+func TestCreateTraceInfo(t *testing.T) {
+	t.Run("正常创建", func(t *testing.T) {
+		trace := createTraceInfo(1, nil)
+		assert.NotNil(t, trace)
+		str := trace.String()
+		assert.NotEmpty(t, str)
+	})
+
+	t.Run("跳过层级", func(t *testing.T) {
+		trace := createTraceInfo(2, nil)
+		assert.NotNil(t, trace)
+		// 跳过更多层级，应该指向调用者的调用者
+		str := trace.String()
+		assert.NotEmpty(t, str)
+	})
+}
+
+// TestContextMethods 测试context.go中未覆盖的方法
+func TestContextMethods(t *testing.T) {
+	t.Run("ErrorWithContext创建", func(t *testing.T) {
+		ctx := context.WithValue(context.Background(), "key", "value")
+		err := ErrorWithContext(ctx, "test error")
+		
+		assert.NotNil(t, err)
+		// 验证错误消息的具体内容
+		errMsg := err.Error()
+		assert.Equal(t, "test error", errMsg)
+	})
+
+	t.Run("ToString方法-context错误", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+		defer cancel()
+		
+		time.Sleep(2 * time.Millisecond) // 确保超时
+		
+		err := ErrorWithContext(ctx, "test error")
+		str := err.ToString(false, ", ")
+		
+		// 验证包含测试错误和context错误
+		// 由于context错误会被包装，我们验证基本结构
+		assert.NotEmpty(t, str)
+		// 验证至少包含我们的错误消息
+		contextualIrr, ok := err.(*ContextualIrr)
+		assert.True(t, ok)
+		assert.Equal(t, "test error", contextualIrr.BasicIrr.Msg)
+		
+		// 验证context错误存在
+		assert.NotNil(t, ctx.Err())
+		assert.Equal(t, context.DeadlineExceeded, ctx.Err())
+	})
+}
+
+// TestAdditionalCoverage 测试提高覆盖率的边界情况
+func TestAdditionalCoverage(t *testing.T) {
+	t.Run("Context方法边界情况", func(t *testing.T) {
+		// 测试Context方法的所有分支
+		ctx := context.WithValue(context.Background(), "key", "value")
+		err := ErrorWithContext(ctx, "test error")
+		
+		contextualErr, ok := err.(*ContextualIrr)
+		assert.True(t, ok)
+		
+		// 测试Context方法返回context
+		retrievedCtx := contextualErr.Context()
+		assert.Equal(t, "value", retrievedCtx.Value("key"))
+		
+		// 测试ctx为nil的情况
+		contextualErrNil := &ContextualIrr{
+			BasicIrr: Error("test").(*BasicIrr),
+			ctx:      nil,
+		}
+		nilCtx := contextualErrNil.Context()
+		assert.Equal(t, context.Background(), nilCtx)
+		
+		// 测试非ContextualIrr的情况 - ExtractContext返回context.Background()
+		basicErr := Error("basic error")
+		extractedCtx := ExtractContext(basicErr)
+		assert.NotNil(t, extractedCtx)
+		assert.Equal(t, context.Background(), extractedCtx)
+	})
+
+	t.Run("TraverseToSource边界情况", func(t *testing.T) {
+		// 测试TraverseToSource的panic恢复
+		err := Error("test error")
+		
+		// 测试正常遍历
+		var sourceErr error
+		traverseErr := err.TraverseToSource(func(e error, isSource bool) error {
+			if isSource {
+				sourceErr = e
+			}
+			return nil
+		})
+		assert.Nil(t, traverseErr)
+		assert.Equal(t, err, sourceErr)
+		
+		// 测试遍历中抛出错误
+		traverseErr = err.TraverseToSource(func(e error, isSource bool) error {
+			return errors.New("traverse error")
+		})
+		assert.NotNil(t, traverseErr)
+		assert.Equal(t, "traverse error", traverseErr.Error())
+		
+		// 测试遍历中panic
+		traverseErr = err.TraverseToSource(func(e error, isSource bool) error {
+			panic("test panic")
+		})
+		assert.NotNil(t, traverseErr)
+		assert.Contains(t, traverseErr.Error(), "panic = test panic")
+	})
+
+	t.Run("NearestCode边界情况", func(t *testing.T) {
+		// 测试错误链中没有错误码的情况
+		innerErr := errors.New("standard error")
+		err := Wrap(innerErr, "wrapper error")
+		
+		code := err.NearestCode()
+		assert.Equal(t, int64(0), code)
+		
+		// 测试错误链中有错误码的情况
+		codeErr := ErrorC(404, "not found")
+		wrappedErr := Wrap(codeErr, "wrapped")
+		
+		code = wrappedErr.NearestCode()
+		assert.Equal(t, int64(404), code)
+	})
+
+	t.Run("RootCode边界情况", func(t *testing.T) {
+		// 测试根错误没有错误码的情况
+		innerErr := errors.New("standard error")
+		err := Wrap(innerErr, "wrapper error")
+		
+		code := err.RootCode()
+		assert.Equal(t, int64(0), code)
+		
+		// 测试根错误有错误码的情况
+		rootErr := ErrorC(500, "internal error")
+		wrappedErr := Wrap(rootErr, "wrapped")
+		
+		code = wrappedErr.RootCode()
+		assert.Equal(t, int64(500), code)
+		
+		// 测试复杂错误链
+		level1 := ErrorC(100, "level1")
+		level2 := Wrap(level1, "level2")
+		level3 := Wrap(level2, "level3")
+		
+		code = level3.RootCode()
+		assert.Equal(t, int64(100), code)
+	})
+
+	t.Run("TraverseCode边界情况", func(t *testing.T) {
+		// 测试TraverseCode的panic恢复
+		err := ErrorC(404, "test error")
+		
+		// 测试正常遍历
+		var codes []int64
+		traverseErr := err.TraverseCode(func(e error, code int64) error {
+			codes = append(codes, code)
+			return nil
+		})
+		assert.Nil(t, traverseErr)
+		assert.Contains(t, codes, int64(404))
+		
+		// 测试遍历中抛出错误
+		traverseErr = err.TraverseCode(func(e error, code int64) error {
+			return errors.New("traverse error")
+		})
+		assert.NotNil(t, traverseErr)
+		assert.Equal(t, "traverse error", traverseErr.Error())
+		
+		// 测试遍历中panic
+		traverseErr = err.TraverseCode(func(e error, code int64) error {
+			panic("test panic")
+		})
+		assert.NotNil(t, traverseErr)
+		assert.Contains(t, traverseErr.Error(), "panic = test panic")
+	})
+
+	t.Run("GetTag边界情况", func(t *testing.T) {
+		err := Error("test error")
+		
+		// 测试获取不存在的标签
+		tags := err.GetTag("nonexistent")
+		assert.Empty(t, tags)
+		
+		// 测试tags为nil的情况
+		basicErr := &BasicIrr{Msg: "test"}
+		tags = basicErr.GetTag("any")
+		assert.Empty(t, tags)
+		
+		// 测试获取存在的标签
+		err.SetTag("key", "value1")
+		err.SetTag("key", "value2")
+		tags = err.GetTag("key")
+		assert.Len(t, tags, 2)
+		assert.Contains(t, tags, "value1")
+		assert.Contains(t, tags, "value2")
+	})
+
+	t.Run("createTraceInfo边界情况", func(t *testing.T) {
+		// 测试不同的skip值，但要小心避免panic
+		trace1 := createTraceInfo(0, nil)
+		assert.NotNil(t, trace1)
+		
+		trace2 := createTraceInfo(1, nil)
+		assert.NotNil(t, trace2)
+		
+		// 测试带有innerErr的情况
+		innerErr := Error("inner error")
+		trace3 := createTraceInfo(1, innerErr)
+		// 可能返回nil或非nil，取决于堆栈是否相同
+		_ = trace3 // 使用变量避免编译错误
+		
+		// 验证堆栈信息不为空
+		str1 := trace1.String()
+		str2 := trace2.String()
+		assert.NotEmpty(t, str1)
+		assert.NotEmpty(t, str2)
 	})
 }

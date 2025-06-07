@@ -178,53 +178,182 @@ func TestDumpToCodeNError_WithICodeGetter(t *testing.T) {
 }
 
 func TestDumpToCodeNError_EdgeCases(t *testing.T) {
-	tests := []struct {
-		name       string
-		succ       Code
-		unknown    Code
-		err        error
-		msgOrFmt   string
-		args       []interface{}
-		expectCode Code
-		expectMsg  string
-	}{
-		{
-			name:       "zero success code",
-			succ:       Code(0),
-			unknown:    TestCodeUnknown,
-			err:        nil,
-			msgOrFmt:   "",
-			args:       nil,
-			expectCode: Code(0),
-			expectMsg:  "",
-		},
-		{
-			name:       "negative error code",
-			succ:       TestCodeSuccess,
-			unknown:    Code(-1),
-			err:        errors.New("error"),
-			msgOrFmt:   "",
-			args:       nil,
-			expectCode: Code(-1),
-			expectMsg:  "error",
-		},
-		{
-			name:       "message with special characters",
-			succ:       TestCodeSuccess,
-			unknown:    TestCodeUnknown,
-			err:        errors.New("error with %s and %d"),
-			msgOrFmt:   "wrapper with %s",
-			args:       []interface{}{"special chars"},
-			expectCode: TestCodeUnknown,
-			expectMsg:  "wrapper with special chars, error with %s and %d",
-		},
-	}
+	t.Run("空消息格式", func(t *testing.T) {
+		err := errors.New("test error")
+		code, msg := DumpToCodeNError(TestCodeSuccess, TestCodeUnknown, err, "")
+		
+		assert.Equal(t, TestCodeUnknown, code)
+		assert.Equal(t, "test error", msg)
+	})
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			code, msg := DumpToCodeNError(tt.succ, tt.unknown, tt.err, tt.msgOrFmt, tt.args...)
-			assert.Equal(t, tt.expectCode, code)
-			assert.Equal(t, tt.expectMsg, msg)
-		})
-	}
+	t.Run("消息格式但无参数", func(t *testing.T) {
+		err := errors.New("test error")
+		code, msg := DumpToCodeNError(TestCodeSuccess, TestCodeUnknown, err, "prefix message")
+		
+		assert.Equal(t, TestCodeUnknown, code)
+		assert.Equal(t, "test error", msg)
+	})
+
+	t.Run("消息格式和参数", func(t *testing.T) {
+		err := errors.New("test error")
+		code, msg := DumpToCodeNError(TestCodeSuccess, TestCodeUnknown, err, "prefix %s", "formatted")
+		
+		assert.Equal(t, TestCodeUnknown, code)
+		assert.Equal(t, "prefix formatted, test error", msg)
+	})
+
+	t.Run("错误消息包含代码字符串前缀", func(t *testing.T) {
+		// 创建一个带有代码字符串前缀的错误
+		baseErr := &mockCodeError{
+			code:    404,
+			codeStr: "code(404), ",
+			message: "code(404), not found",
+		}
+		
+		code, msg := DumpToCodeNError(TestCodeSuccess, TestCodeUnknown, baseErr, "")
+		
+		assert.Equal(t, Code(404), code)
+		assert.Equal(t, "not found", msg)
+	})
+
+	t.Run("错误消息不包含代码字符串前缀", func(t *testing.T) {
+		baseErr := &mockCodeError{
+			code:    404,
+			codeStr: "code(404), ",
+			message: "not found",
+		}
+		
+		code, msg := DumpToCodeNError(TestCodeSuccess, TestCodeUnknown, baseErr, "")
+		
+		assert.Equal(t, Code(404), code)
+		assert.Equal(t, "not found", msg)
+	})
+
+	t.Run("使用NearestCode接口", func(t *testing.T) {
+		baseErr := &mockNearestCodeError{
+			code:    500,
+			codeStr: "code(500), ",
+			message: "code(500), server error",
+		}
+		
+		code, msg := DumpToCodeNError(TestCodeSuccess, TestCodeUnknown, baseErr, "")
+		
+		assert.Equal(t, Code(500), code)
+		assert.Equal(t, "server error", msg)
+	})
+
+	t.Run("使用ICodeTraverse接口", func(t *testing.T) {
+		baseErr := &mockTraverseError{
+			code:    403,
+			codeStr: "code(403), ",
+			message: "code(403), forbidden",
+		}
+		
+		code, msg := DumpToCodeNError(TestCodeSuccess, TestCodeUnknown, baseErr, "")
+		
+		assert.Equal(t, Code(403), code)
+		assert.Equal(t, "forbidden", msg)
+	})
+
+	t.Run("使用ICodeGetter接口", func(t *testing.T) {
+		baseErr := &mockGetterError{
+			code:    401,
+			codeStr: "code(401), ",
+			message: "code(401), unauthorized",
+		}
+		
+		code, msg := DumpToCodeNError(TestCodeSuccess, TestCodeUnknown, baseErr, "")
+		
+		assert.Equal(t, Code(401), code)
+		assert.Equal(t, "unauthorized", msg)
+	})
+
+	t.Run("复杂格式化消息", func(t *testing.T) {
+		err := errors.New("database connection failed")
+		code, msg := DumpToCodeNError(TestCodeSuccess, TestCodeUnknown, err, "operation %s failed with %d retries", "connect", 3)
+		
+		assert.Equal(t, TestCodeUnknown, code)
+		assert.Equal(t, "operation connect failed with 3 retries, database connection failed", msg)
+	})
+}
+
+// 辅助测试结构体
+type mockCodeError struct {
+	code    int64
+	codeStr string
+	message string
+}
+
+func (e *mockCodeError) Error() string {
+	return e.message
+}
+
+func (e *mockCodeError) GetCode() int64 {
+	return e.code
+}
+
+func (e *mockCodeError) GetCodeStr() string {
+	return e.codeStr
+}
+
+type mockNearestCodeError struct {
+	code    int64
+	codeStr string
+	message string
+}
+
+func (e *mockNearestCodeError) Error() string {
+	return e.message
+}
+
+func (e *mockNearestCodeError) NearestCode() int64 {
+	return e.code
+}
+
+func (e *mockNearestCodeError) GetCodeStr() string {
+	return e.codeStr
+}
+
+type mockTraverseError struct {
+	code    int64
+	codeStr string
+	message string
+}
+
+func (e *mockTraverseError) Error() string {
+	return e.message
+}
+
+func (e *mockTraverseError) ClosestCode() int64 {
+	return e.code
+}
+
+func (e *mockTraverseError) GetCode() int64 {
+	return e.code
+}
+
+func (e *mockTraverseError) GetCodeStr() string {
+	return e.codeStr
+}
+
+func (e *mockTraverseError) TraverseCode(fn func(err error, code int64) error) error {
+	return fn(e, e.code)
+}
+
+type mockGetterError struct {
+	code    int64
+	codeStr string
+	message string
+}
+
+func (e *mockGetterError) Error() string {
+	return e.message
+}
+
+func (e *mockGetterError) GetCode() int64 {
+	return e.code
+}
+
+func (e *mockGetterError) GetCodeStr() string {
+	return e.codeStr
 }
