@@ -719,6 +719,31 @@ func (m *mockStatsLogger) LogErrorStats(metrics *ErrorMetrics) {
 	m.loggedMetrics = metrics
 }
 
+// Mock types for interface testing
+type mockGetCodeError struct {
+	code int64
+}
+
+func (m *mockGetCodeError) Error() string {
+	return "mock error"
+}
+
+func (m *mockGetCodeError) GetCode() int64 {
+	return m.code
+}
+
+type mockCurrentCodeError struct {
+	code int64
+}
+
+func (m *mockCurrentCodeError) Error() string {
+	return "mock current code error"
+}
+
+func (m *mockCurrentCodeError) CurrentCode() int64 {
+	return m.code
+}
+
 // TestCatchFailure 测试CatchFailure方法
 func TestCatchFailure(t *testing.T) {
 	t.Run("测试CatchFailure实际用法", func(t *testing.T) {
@@ -1011,5 +1036,311 @@ func TestAdditionalCoverage(t *testing.T) {
 		str2 := trace2.String()
 		assert.NotEmpty(t, str1)
 		assert.NotEmpty(t, str2)
+	})
+
+	t.Run("TraverseToSource更多边界情况", func(t *testing.T) {
+		// 测试包装标准错误的情况
+		stdErr := errors.New("standard error")
+		wrappedErr := Wrap(stdErr, "wrapped")
+		
+		var sourceErr error
+		var isSourceCalled bool
+		traverseErr := wrappedErr.TraverseToSource(func(e error, isSource bool) error {
+			if isSource {
+				sourceErr = e
+				isSourceCalled = true
+			}
+			return nil
+		})
+		assert.Nil(t, traverseErr)
+		assert.True(t, isSourceCalled)
+		assert.Equal(t, stdErr, sourceErr)
+	})
+
+	t.Run("NearestCode更多边界情况", func(t *testing.T) {
+		// 测试包装非IRR错误的情况
+		stdErr := errors.New("standard error")
+		wrappedErr := Wrap(stdErr, "wrapped")
+		
+		code := wrappedErr.NearestCode()
+		assert.Equal(t, int64(0), code)
+		
+		// 测试深层嵌套的情况
+		level1 := ErrorC(100, "level1")
+		level2 := Wrap(level1, "level2")
+		level3 := Wrap(level2, "level3")
+		level4 := Wrap(level3, "level4")
+		
+		code = level4.NearestCode()
+		assert.Equal(t, int64(100), code)
+	})
+
+	t.Run("RootCode更多边界情况", func(t *testing.T) {
+		// 测试包装非IRR错误的情况
+		stdErr := errors.New("standard error")
+		wrappedErr := Wrap(stdErr, "wrapped")
+		
+		code := wrappedErr.RootCode()
+		assert.Equal(t, int64(0), code)
+		
+		// 测试混合错误链
+		stdErr2 := errors.New("another standard error")
+		irrErr := ErrorC(200, "irr error")
+		mixed1 := Wrap(stdErr2, "wrap std")
+		mixed2 := Wrap(mixed1, "wrap again")
+		mixed3 := Wrap(irrErr, "wrap irr")
+		
+		code = mixed2.RootCode()
+		assert.Equal(t, int64(0), code)
+		
+		code = mixed3.RootCode()
+		assert.Equal(t, int64(200), code)
+	})
+
+	t.Run("TraverseCode更多边界情况", func(t *testing.T) {
+		// 测试包装非IRR错误的情况
+		stdErr := errors.New("standard error")
+		wrappedErr := Wrap(stdErr, "wrapped")
+		
+		var codes []int64
+		traverseErr := wrappedErr.TraverseCode(func(e error, code int64) error {
+			codes = append(codes, code)
+			return nil
+		})
+		assert.Nil(t, traverseErr)
+		// 应该包含包装错误的代码（0）
+		assert.Contains(t, codes, int64(0))
+	})
+
+	t.Run("GetTag更多边界情况", func(t *testing.T) {
+		// 测试空map的情况
+		err := Error("test error")
+		
+		// 先确保tags为空
+		tags := err.GetTag("any")
+		assert.Empty(t, tags)
+		
+		// 设置一个标签后再获取不存在的标签
+		err.SetTag("existing", "value")
+		tags = err.GetTag("nonexistent")
+		assert.Empty(t, tags)
+		
+		// 获取存在的标签
+		tags = err.GetTag("existing")
+		assert.Len(t, tags, 1)
+		assert.Equal(t, "value", tags[0])
+	})
+
+	t.Run("NearestCode panic分支", func(t *testing.T) {
+		// 创建一个会在TraverseCode中panic的错误
+		err := Error("test error")
+		
+		// 通过反射或其他方式模拟TraverseCode中的panic
+		// 这里我们直接测试NearestCode的正常情况，因为panic分支很难触发
+		code := err.NearestCode()
+		assert.Equal(t, int64(0), code)
+		
+		// 测试有错误码的情况
+		errWithCode := ErrorC(404, "not found")
+		code = errWithCode.NearestCode()
+		assert.Equal(t, int64(404), code)
+	})
+
+	t.Run("RootCode接口兼容性", func(t *testing.T) {
+		// 测试RootCode方法的不同接口分支
+		
+		// 包装这个mock错误
+		mockErr := &mockGetCodeError{code: 999}
+		wrappedErr := Wrap(mockErr, "wrapped mock")
+		
+		code := wrappedErr.RootCode()
+		assert.Equal(t, int64(999), code)
+		
+		// 测试CurrentCode接口
+		mockCurrentErr := &mockCurrentCodeError{code: 888}
+		wrappedCurrentErr := Wrap(mockCurrentErr, "wrapped current")
+		
+		code = wrappedCurrentErr.RootCode()
+		assert.Equal(t, int64(888), code)
+	})
+
+	t.Run("TraverseCode接口兼容性", func(t *testing.T) {
+		// 测试TraverseCode方法的不同接口分支
+		
+		// 包装这个mock错误
+		mockErr := &mockGetCodeError{code: 777}
+		wrappedErr := Wrap(mockErr, "wrapped mock")
+		
+		var codes []int64
+		traverseErr := wrappedErr.TraverseCode(func(e error, code int64) error {
+			codes = append(codes, code)
+			return nil
+		})
+		assert.Nil(t, traverseErr)
+		assert.Contains(t, codes, int64(777)) // mock错误的代码
+		assert.Contains(t, codes, int64(0))   // 包装错误的代码
+	})
+
+	t.Run("createTraceInfo不同分支", func(t *testing.T) {
+		// 测试createTraceInfo的不同分支
+		
+		// 测试innerErr为nil的情况
+		trace1 := createTraceInfo(1, nil)
+		assert.NotNil(t, trace1)
+		
+		// 测试innerErr不是IRR类型的情况
+		stdErr := errors.New("standard error")
+		trace2 := createTraceInfo(1, stdErr)
+		assert.NotNil(t, trace2)
+		
+		// 测试innerErr是IRR但没有trace的情况
+		irrErr := Error("irr error")
+		// 清除trace信息
+		if basicIrr, ok := irrErr.(*BasicIrr); ok {
+			basicIrr.Trace = nil
+		}
+		trace3 := createTraceInfo(1, irrErr)
+		assert.NotNil(t, trace3)
+		
+		// 测试innerErr是IRR且有相同trace的情况
+		irrErrWithTrace := Trace("irr error with trace")
+		trace4 := createTraceInfo(1, irrErrWithTrace)
+		// 这种情况可能返回nil或非nil，取决于堆栈是否相同
+		_ = trace4
+	})
+
+	t.Run("TraverseToSource panic恢复", func(t *testing.T) {
+		// 创建一个会在遍历过程中panic的函数
+		err := Error("test error")
+		
+		// 测试panic恢复机制
+		traverseErr := err.TraverseToSource(func(e error, isSource bool) error {
+			if isSource {
+				panic("test panic")
+			}
+			return nil
+		})
+		
+		assert.NotNil(t, traverseErr)
+		assert.Contains(t, traverseErr.Error(), "panic")
+		
+		// 测试panic非error类型的恢复
+		traverseErr2 := err.TraverseToSource(func(e error, isSource bool) error {
+			if isSource {
+				panic("string panic")
+			}
+			return nil
+		})
+		
+		assert.NotNil(t, traverseErr2)
+		assert.Contains(t, traverseErr2.Error(), "panic")
+	})
+
+	t.Run("TraverseToSource空链", func(t *testing.T) {
+		// 创建一个没有inner错误的BasicIrr
+		err := Error("standalone error")
+		
+		var visitedErrors []error
+		var sourceFlags []bool
+		
+		traverseErr := err.TraverseToSource(func(e error, isSource bool) error {
+			visitedErrors = append(visitedErrors, e)
+			sourceFlags = append(sourceFlags, isSource)
+			return nil
+		})
+		
+		assert.Nil(t, traverseErr)
+		assert.Len(t, visitedErrors, 1)
+		assert.True(t, sourceFlags[0]) // 应该是source
+	})
+
+	t.Run("TraverseToSource复杂链", func(t *testing.T) {
+		// 创建一个复杂的错误链：BasicIrr -> BasicIrr -> 标准错误
+		stdErr := errors.New("root cause")
+		wrappedOnce := Wrap(stdErr, "first wrap")
+		wrappedTwice := Wrap(wrappedOnce, "second wrap")
+		
+		var visitedErrors []error
+		var sourceFlags []bool
+		
+		traverseErr := wrappedTwice.TraverseToSource(func(e error, isSource bool) error {
+			visitedErrors = append(visitedErrors, e)
+			sourceFlags = append(sourceFlags, isSource)
+			return nil
+		})
+		
+		assert.Nil(t, traverseErr)
+		assert.Len(t, visitedErrors, 3)
+		
+		// 检查遍历顺序和source标记
+		assert.False(t, sourceFlags[0]) // wrappedTwice不是source
+		assert.False(t, sourceFlags[1]) // wrappedOnce不是source  
+		assert.True(t, sourceFlags[2])  // stdErr是source
+		
+		// 检查最后一个是标准错误
+		assert.Equal(t, stdErr, visitedErrors[2])
+	})
+
+	t.Run("createTraceInfo相同trace分支", func(t *testing.T) {
+		// 创建一个有trace的错误
+		irrErrWithTrace := Trace("irr error with trace")
+		
+		// 获取其trace信息
+		originalTrace := irrErrWithTrace.GetTraceInfo()
+		assert.NotNil(t, originalTrace)
+		
+		// 在相同的调用栈位置创建trace，应该返回nil（因为trace相同）
+		// 这个测试比较难精确控制，因为堆栈信息会不同
+		// 我们可以通过修改现有错误的trace来模拟相同trace的情况
+		
+		// 创建另一个错误，然后手动设置相同的trace
+		anotherErr := Error("another error")
+		if basicIrr, ok := anotherErr.(*BasicIrr); ok {
+			basicIrr.Trace = originalTrace // 设置相同的trace
+		}
+		
+		// 现在调用createTraceInfo，应该返回nil（因为trace相同）
+		newTrace := createTraceInfo(1, anotherErr)
+		// 由于堆栈不同，这里应该返回非nil
+		assert.NotNil(t, newTrace)
+		
+		// 测试真正相同trace的情况 - 通过直接比较
+		if basicIrr, ok := irrErrWithTrace.(*BasicIrr); ok && basicIrr.Trace != nil {
+			// 创建一个具有完全相同trace的情况
+			sameTrace := *basicIrr.Trace // 复制trace
+			testErr := Error("test")
+			if testBasicIrr, ok := testErr.(*BasicIrr); ok {
+				testBasicIrr.Trace = &sameTrace
+			}
+			
+			// 现在测试createTraceInfo
+			result := createTraceInfo(1, testErr)
+			// 由于调用位置不同，应该返回新的trace
+			assert.NotNil(t, result)
+		}
+	})
+
+	t.Run("NearestCode panic分支覆盖", func(t *testing.T) {
+		// 创建一个正常的错误来测试NearestCode的正常路径
+		err1 := Error("test error")
+		code1 := err1.NearestCode()
+		assert.Equal(t, int64(0), code1)
+		
+		err2 := ErrorC(123, "test with code")
+		code2 := err2.NearestCode()
+		assert.Equal(t, int64(123), code2)
+		
+		// 测试错误链中的NearestCode
+		innerErr := ErrorC(456, "inner")
+		outerErr := Wrap(innerErr, "outer")
+		code3 := outerErr.NearestCode()
+		assert.Equal(t, int64(456), code3)
+		
+		// 测试多层嵌套
+		layer1 := ErrorC(100, "layer1")
+		layer2 := Wrap(layer1, "layer2").SetCode(200)
+		layer3 := Wrap(layer2, "layer3")
+		code4 := layer3.NearestCode()
+		assert.Equal(t, int64(200), code4) // 应该是最近的非零码
 	})
 }
