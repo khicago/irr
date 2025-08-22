@@ -50,7 +50,7 @@ func ExampleResult_Expect() {
 func ExampleAndThen() {
 	r := OK("start")
 	// The AndThen function can be used to chain operations on a Result.
-	chainedResult := AndThen(r, func(value string) Result[string] {
+	chainedResult := AndThen(r, func(value string) ResultError[string] {
 		return OK(value + " chained")
 	})
 

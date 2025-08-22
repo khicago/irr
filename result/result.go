@@ -4,68 +4,179 @@ import (
 	"github.com/khicago/irr"
 )
 
-var ErrUnwrapErrOnOK = irr.Error("called UnwrapErr on ok")
-
-type Result[T any] struct {
-	result T
-	err    error
+// Result 标准的Result<T,E>模式实现
+// 基于第一性原理，提供类型安全的错误处理
+type Result[T, E any] struct {
+	value T
+	err   E
+	isOk  bool
 }
 
-func (r Result[T]) Ok() bool {
-	return r.err == nil
+// Go 1.23+ 泛型别名 - 零开销抽象
+type ResultIRR[T any] = Result[T, irr.IRR]
+type ResultError[T any] = Result[T, error]
+
+// ========== 构造函数 ==========
+
+// Ok 创建成功的Result
+func Ok[T, E any](value T) Result[T, E] {
+	return Result[T, E]{
+		value: value,
+		isOk:  true,
+	}
 }
 
-func (r Result[T]) Err() error {
+// Err 创建失败的Result
+func Err[T, E any](err E) Result[T, E] {
+	return Result[T, E]{
+		err:  err,
+		isOk: false,
+	}
+}
+
+// ========== 语法糖构造函数 ==========
+
+// OkIRR 创建成功的ResultIRR[T]
+func OkIRR[T any](value T) ResultIRR[T] {
+	return Ok[T, irr.IRR](value)
+}
+
+// ErrIRR 创建失败的ResultIRR[T]
+func ErrIRR[T any](err irr.IRR) ResultIRR[T] {
+	return Err[T, irr.IRR](err)
+}
+
+// OkError 创建成功的ResultError[T]
+func OkError[T any](value T) ResultError[T] {
+	return Ok[T, error](value)
+}
+
+// ErrError 创建失败的ResultError[T]
+func ErrError[T any](err error) ResultError[T] {
+	return Err[T, error](err)
+}
+
+// ========== 便利别名 ==========
+
+// OK 创建成功的Result（便利别名，兼容现有代码）
+func OK[T any](value T) ResultError[T] {
+	return OkError(value)
+}
+
+// ========== 状态检查 ==========
+
+// IsOk 检查是否成功
+func (r Result[T, E]) IsOk() bool {
+	return r.isOk
+}
+
+// IsErr 检查是否失败
+func (r Result[T, E]) IsErr() bool {
+	return !r.isOk
+}
+
+// Ok 检查是否成功（简短API）
+func (r Result[T, E]) Ok() bool {
+	return r.isOk
+}
+
+// Err 获取错误值（简短API）
+func (r Result[T, E]) Err() E {
 	return r.err
 }
 
-// Match 获取存储在 Result 中的值，如果存在错误，则返回默认值和错误
-//
-// switch res, err := r.Match() {
-// case err != nil: error handling branch
-// default: ...
-// }
-func (r Result[T]) Match() (T, error) {
-	if r.err != nil {
+// ========== 值提取 ==========
+
+// Value 安全提取值
+func (r Result[T, E]) Value() (T, bool) {
+	if r.isOk {
+		return r.value, true
+	}
+	var zero T
+	return zero, false
+}
+
+// Error 安全提取错误
+func (r Result[T, E]) Error() (E, bool) {
+	if !r.isOk {
+		return r.err, true
+	}
+	var zero E
+	return zero, false
+}
+
+// Unwrap 强制提取值（可能panic）
+func (r Result[T, E]) Unwrap() T {
+	if !r.isOk {
+		panic("called Unwrap on Err Result")
+	}
+	return r.value
+}
+
+// UnwrapOr 提取值或返回默认值
+func (r Result[T, E]) UnwrapOr(defaultVal T) T {
+	if r.isOk {
+		return r.value
+	}
+	return defaultVal
+}
+
+// UnwrapErr 强制提取错误（可能panic）
+func (r Result[T, E]) UnwrapErr() E {
+	if r.isOk {
+		panic("called UnwrapErr on Ok Result")
+	}
+	return r.err
+}
+
+// Expect 强制提取值，失败时panic带自定义消息
+func (r Result[T, E]) Expect(msg string) T {
+	if !r.isOk {
+		panic(msg)
+	}
+	return r.value
+}
+
+// ========== 模式匹配 ==========
+
+// Match 模式匹配处理，返回(value, error)元组
+func (r Result[T, E]) Match() (T, E) {
+	if r.isOk {
+		var zero E
+		return r.value, zero
+	} else {
 		var zero T
 		return zero, r.err
 	}
-	return r.result, nil
 }
 
-// Unwrap 强制解包 Result.result，如果 Result 包含错误，则抛出 panic
-// Result 不会被消耗，todo 这个可以考虑考虑
-func (r Result[T]) Unwrap() T {
-	if r.err != nil {
-		panic(r.Err)
+// MatchFunc 基于函数的模式匹配处理
+func (r Result[T, E]) MatchFunc(
+	onOk func(T),
+	onErr func(E),
+) {
+	if r.isOk {
+		onOk(r.value)
+	} else {
+		onErr(r.err)
 	}
-	return r.result
 }
 
-// UnwrapOr 强制解包 Result，如果 Result 不包含错误，则抛出默认值
-// Result 不会被消耗，todo 这个可以考虑考虑
-func (r Result[T]) UnwrapOr(defaultVal T) T {
-	if r.err != nil {
-		return defaultVal
+// ========== 标准库集成 ==========
+
+// ToTuple 转换为Go惯用的(value, error)元组
+func ToTuple[T any](r ResultError[T]) (T, error) {
+	if r.isOk {
+		return r.value, nil
 	}
-	return r.result
+	var zero T
+	return zero, r.err
 }
 
-// UnwrapErr 强制解包 Result.Err，如果 Result 不包含错误，则抛出 panic
-// Result 不会被消耗，todo 这个可以考虑考虑
-func (r Result[T]) UnwrapErr() error {
-	if r.err == nil {
-		panic(irr.Wrap(ErrUnwrapErrOnOK, "value= %v", r.result))
+// FromTuple 从(value, error)元组创建Result
+func FromTuple[T any](value T, err error) ResultError[T] {
+	if err != nil {
+		return ErrError[T](err)
 	}
-	return r.err
-}
-
-// Expect 返回 Result 中的值或者在发生错误时显示指定的消息
-// Result 不会被消耗，todo 这个可以考虑考虑
-func (r Result[T]) Expect(formatOrMsg string, params ...any) T {
-	if r.err != nil {
-		e := irr.Wrap(r.Err(), formatOrMsg, params...)
-		panic(e)
-	}
-	return r.result
+	return OkError(value)
 }

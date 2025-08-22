@@ -106,13 +106,13 @@ func BenchmarkErrorsIs(b *testing.B) {
 	}
 }
 
-func BenchmarkSetGetCode(b *testing.B) {
+func BenchmarkSetCode(b *testing.B) {
 	err := Error("test error")
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		err.SetCode(int64(i))
-		_ = err.GetCode()
+		_ = err.Code()
 	}
 }
 

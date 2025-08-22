@@ -2,8 +2,8 @@ package result
 
 import (
 	"errors"
-	"testing"
 	"sync"
+	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -112,7 +112,7 @@ func TestMatch(t *testing.T) {
 // TestAndThen 测试 AndThen 方法能够在 Result 为 Ok 时应用函数，并且正确传播错误
 func TestAndThen(t *testing.T) {
 	okResult := OK("success")
-	secondOp := func(s string) Result[int] {
+	secondOp := func(s string) ResultError[int] {
 		return OK(len(s))
 	}
 	newResult := AndThen(okResult, secondOp)
@@ -137,7 +137,7 @@ func TestResultAdditionalMethods(t *testing.T) {
 	t.Run("Ok方法", func(t *testing.T) {
 		okResult := OK(42)
 		errResult := Err[int](errors.New("test error"))
-		
+
 		assert.True(t, okResult.Ok())
 		assert.False(t, errResult.Ok())
 	})
@@ -145,14 +145,14 @@ func TestResultAdditionalMethods(t *testing.T) {
 	t.Run("Err方法", func(t *testing.T) {
 		okResult := OK(42)
 		errResult := Err[int](errors.New("test error"))
-		
+
 		assert.Nil(t, okResult.Err())
 		assert.NotNil(t, errResult.Err())
 	})
 
 	t.Run("Unwrap方法-错误情况", func(t *testing.T) {
 		errResult := Err[int](errors.New("test error"))
-		
+
 		assert.Panics(t, func() {
 			errResult.Unwrap()
 		})
@@ -160,7 +160,7 @@ func TestResultAdditionalMethods(t *testing.T) {
 
 	t.Run("UnwrapErr方法-成功情况", func(t *testing.T) {
 		okResult := OK(42)
-		
+
 		assert.Panics(t, func() {
 			okResult.UnwrapErr()
 		})
@@ -169,7 +169,7 @@ func TestResultAdditionalMethods(t *testing.T) {
 	t.Run("UnwrapErr方法-错误情况", func(t *testing.T) {
 		testErr := errors.New("test error")
 		errResult := Err[int](testErr)
-		
+
 		err := errResult.UnwrapErr()
 		assert.Equal(t, testErr, err)
 	})
@@ -219,11 +219,11 @@ func TestResultAdditionalMethods(t *testing.T) {
 func TestResultComplexChaining(t *testing.T) {
 	t.Run("成功的复杂链", func(t *testing.T) {
 		result := OK(10)
-		
+
 		// 测试基本的链式操作
 		value1 := result.UnwrapOr(0)
 		assert.Equal(t, 10, value1)
-		
+
 		// 测试Match方法
 		value2, err := result.Match()
 		assert.Equal(t, 10, value2)
@@ -232,11 +232,11 @@ func TestResultComplexChaining(t *testing.T) {
 
 	t.Run("中途失败的复杂链", func(t *testing.T) {
 		errResult := Err[int](errors.New("middle error"))
-		
+
 		// 测试错误情况的链式操作
 		value := errResult.UnwrapOr(99)
 		assert.Equal(t, 99, value)
-		
+
 		// 测试Match方法
 		value2, err := errResult.Match()
 		assert.Equal(t, 0, value2)
@@ -278,7 +278,7 @@ func TestResultEdgeCases(t *testing.T) {
 func TestResultConcurrency(t *testing.T) {
 	t.Run("并发读取", func(t *testing.T) {
 		result := OK(42)
-		
+
 		var wg sync.WaitGroup
 		for i := 0; i < 100; i++ {
 			wg.Add(1)
@@ -293,10 +293,10 @@ func TestResultConcurrency(t *testing.T) {
 
 	t.Run("并发UnwrapOr操作", func(t *testing.T) {
 		result := OK(10)
-		
+
 		var wg sync.WaitGroup
 		results := make([]int, 100)
-		
+
 		for i := 0; i < 100; i++ {
 			wg.Add(1)
 			go func(index int) {
@@ -305,7 +305,7 @@ func TestResultConcurrency(t *testing.T) {
 			}(i)
 		}
 		wg.Wait()
-		
+
 		for _, r := range results {
 			assert.Equal(t, 10, r)
 		}

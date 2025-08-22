@@ -1,99 +1,64 @@
 package irr
 
 import (
-	"errors"
+	"context"
+	"fmt"
 )
 
-type (
-	ILogCaller interface {
-		LogWarn(logger IWarnLogger) IRR
-		LogError(logger IErrorLogger) IRR
-		LogFatal(logger IFatalLogger) IRR
-	}
-)
+// IRR - 基于第一性原理的最终错误接口
+// 保留有用功能，删除冗余兼容代码
+type IRR interface {
+	// 基础错误接口
+	error
+	fmt.Formatter
 
-type (
-	ICoder[TCode any] interface {
-		ICodeGetter[TCode]
-		SetCode(val TCode) IRR
-	}
+	// 错误链操作
+	Unwrap() error
+	Root() error
 
-	ICodeGetter[TCode any] interface {
-		GetCode() (val TCode)
-		GetCodeStr() string
-	}
+	// 错误码管理 - 统一API
+	Code() int64
+	HasCode() bool
+	SetCode(code int64) IRR
 
-	ITagger interface {
-		SetTag(key, value string)
-		GetTag(key string) (values []string)
-	}
-)
+	// 格式化输出
+	String() string
+	Details() string
+	ToString(printTrace bool, split string) string // 兼容现有代码的格式化方法
 
-type (
-	IUnwrap interface {
-		Unwrap() error
-	}
+	// 堆栈跟踪
+	StackTrace() []Frame
+	HasStackTrace() bool
 
-	ITraverseError interface {
-		Root() error
-		TraverseToRoot(fn func(err error) error) (err error)
-	}
+	// 标签支持
+	Tags() map[string][]string
+	SetTag(key, value string)
+	Tag(key, value string) IRR
+	GetTag(key string) []string // 获取特定标签的值
 
-	ITraverseIrr interface {
-		Source() error
-		TraverseToSource(fn func(err error, isSource bool) error) (err error)
-	}
+	// 上下文感知
+	Context() context.Context
+	WithContext(ctx context.Context) IRR
 
-	ITraverseCoder[TCode any] interface {
-		ClosestCode() TCode
-		TraverseCode(fn func(err error, code TCode) error) (err error)
-		ICodeGetter[TCode]
-	}
+	// 错误遍历 - 保留有用的遍历功能
+	TraverseToRoot(fn func(err error) error) error
+	TraverseToSource(fn func(err error, isSource bool) error) error
 
-	// 新的清晰错误码API接口
-	ICodeManager[TCode any] interface {
-		// 错误码获取
-		NearestCode() TCode // 最近的有效错误码
-		CurrentCode() TCode // 当前对象的错误码
-		RootCode() TCode    // 根错误的错误码
+	// 注意: 删除了冗余的GetCode()、GetTraceInfo()、ClosestCode()方法
+	// 统一使用Code()和StackTrace()
+}
 
-		// 错误码状态检查
-		HasCurrentCode() bool // 当前对象是否设置了错误码
-		HasAnyCode() bool     // 错误链中是否有任何错误码
+// Spawner 错误生成器接口
+type Spawner interface {
+	Error(message string, args ...any) IRR
+	Wrap(err error, message string, args ...any) IRR
+	Track(err error, message string, args ...any) IRR
+	Trace(message string, args ...any) IRR
+}
 
-		// 向后兼容（标记为废弃）
-		GetCode() TCode     // @deprecated: 使用 NearestCode()
-		ClosestCode() TCode // @deprecated: 使用 NearestCode()
-	}
-
-	IRR interface {
-		ITraverseIrr
-
-		error
-		ITraverseError
-		IUnwrap
-
-		ICodeManager[int64]    // 使用新的清晰错误码API
-		SetCode(val int64) IRR // 保留SetCode方法
-		GetCodeStr() string    // 保留GetCodeStr方法
-
-		ITraverseCoder[int64]
-
-		ITagger
-		ILogCaller
-
-		ToString(printTrace bool, split string) string
-		GetTraceInfo() *traceInfo
-	}
-
-	Spawner interface {
-		Error(formatOrMsg string, args ...interface{}) IRR
-		Wrap(innerErr error, formatOrMsg string, args ...interface{}) IRR
-		TraceSkip(skip int, formatOrMsg string, args ...interface{}) IRR
-		Trace(formatOrMsg string, args ...interface{}) IRR
-		TrackSkip(skip int, innerErr error, formatOrMsg string, args ...interface{}) IRR
-		Track(innerErr error, formatOrMsg string, args ...interface{}) IRR
-	}
-)
-
-var ErrUntypedExecutionFailure = errors.New("!!!panic")
+// ICoder 编码器接口，支持泛型错误码类型
+type ICoder[T any] interface {
+	Code() T
+	HasCode() bool
+	// 注意: 删除了冗余的GetCode()方法，统一使用Code()
+}
